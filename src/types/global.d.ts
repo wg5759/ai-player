@@ -35,6 +35,10 @@ interface AiPlayerAPI {
   wifi?: {
     url: () => Promise<string | null>
   }
+  dialog?: {
+    openFile: () => Promise<string | null>
+    openFolder: () => Promise<string | null>
+  }
   print?: {
     file: (filePath: string) => Promise<{ success: boolean; action?: string; error?: string }>
   }

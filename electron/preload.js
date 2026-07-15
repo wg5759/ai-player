@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('aiPlayer', {
   wifi: {
     url: () => ipcRenderer.invoke('wifi:url')
   },
+  dialog: {
+    openFile: () => ipcRenderer.invoke('dialog:openFile'),
+    openFolder: () => ipcRenderer.invoke('dialog:openFolder')
+  },
   print: {
     file: (filePath) => ipcRenderer.invoke('print:file', filePath)
   },

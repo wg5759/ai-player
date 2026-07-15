@@ -91,7 +91,12 @@ function createWindow() {
 }
 
 const menuTemplate = [
-  { label: '文件', submenu: [{ role: 'quit', label: '退出' }] },
+  { label: '文件', submenu: [
+    { label: '打开文件', click: async () => { const { dialog } = require('electron'); const r = await dialog.showOpenDialog(mainWindow, { filters: [{ name: '视频', extensions: ['mp4','mkv','avi','mov','flv','webm','mp3','flac','wav'] }], properties: ['openFile'] }); if (!r.canceled) mainWindow?.webContents.send('menu:openFile', r.filePaths[0]) } },
+    { label: '打开文件夹', click: async () => { const { dialog } = require('electron'); const r = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] }); if (!r.canceled) mainWindow?.webContents.send('menu:openFolder', r.filePaths[0]) } },
+    { type: 'separator' },
+    { role: 'quit', label: '退出' }
+  ] },
   { label: '功能', submenu: [{ label: 'Agent 对话', click: () => mainWindow?.webContents.send('menu:agent') }] },
   { label: '窗口', submenu: [{ role: 'minimize', label: '最小化' }, { role: 'close', label: '关闭' }] },
   { label: '帮助', submenu: [{ label: '关于 AI播放器' }] }
@@ -160,6 +165,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('tmdb:search', (_e, name) => searchMovie(name, process.env.TMDB_API_KEY))
   ipcMain.handle('cast:scan', () => castService.scan())
   ipcMain.handle('cast:cast', (_e, deviceId, filePath) => castService.cast(deviceId, filePath))
+  ipcMain.handle('dialog:openFile', async () => { const { dialog } = require('electron'); const r = await dialog.showOpenDialog(mainWindow, { filters: [{ name: '视频', extensions: ['mp4','mkv','avi','mov','flv','webm','mp3','flac','wav'] }], properties: ['openFile'] }); return r.canceled ? null : r.filePaths[0] })
+  ipcMain.handle('dialog:openFolder', async () => { const { dialog } = require('electron'); const r = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] }); return r.canceled ? null : r.filePaths[0] })
   ipcMain.handle('sync:url', () => (syncService ? syncService.getUrl() : null))
   ipcMain.handle('sync:setPeer', (_e, url) => {
     syncService?.setPeer(url)

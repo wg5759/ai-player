@@ -75,6 +75,17 @@ export default function PlayerView({ onBack }: Props) {
       onMouseMove={handleMouseMove}
       onDrop={handleDrop}
       onDragOver={(e) => e.preventDefault()}
+      onContextMenu={async (e) => {
+        e.preventDefault()
+        const p = await window.aiPlayer?.dialog?.openFile()
+        if (p) usePlayerStore.getState().setMedia(p.split(/[\\/]/).pop() || p, p)
+      }}
+      onDoubleClick={() => {
+        const s = usePlayerStore.getState()
+        s.toggleFullscreen()
+        if (document.fullscreenElement) document.exitFullscreen()
+        else document.documentElement.requestFullscreen().catch(() => {})
+      }}
     >
       {videoUrl ? (
         <video
