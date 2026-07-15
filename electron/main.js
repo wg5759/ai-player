@@ -15,6 +15,7 @@ const mammoth = require('mammoth')
 const XLSX = require('xlsx')
 const { searchSubtitle } = require('./subtitle-service')
 const { DlnaReceiver } = require('./dlna-receiver')
+const log = require('./logger')
 
 const isDev = !app.isPackaged
 let mpv = null
@@ -107,6 +108,8 @@ const menuTemplate = [
   { label: '帮助', submenu: [{ label: '关于 AI播放器' }] }
 ]
 Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate))
+
+log.info('AI播放器启动')
 
 app.whenReady().then(async () => {
   const win = createWindow()
