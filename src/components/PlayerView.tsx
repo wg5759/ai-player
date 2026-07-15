@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import PlayerControls from './PlayerControls'
 import { usePlayerStore } from '../stores/playerStore'
 
@@ -37,6 +37,7 @@ export default function PlayerView({ onBack }: Props) {
   const setDuration = usePlayerStore((s) => s.setDuration)
   const seek = usePlayerStore((s) => s.seek)
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [officeHtml, setOfficeHtml] = useState<string | null>(null)
 
   const isDesktop = window.aiPlayer?.isElectron === true
   const fileType = getFileType(mediaName)
@@ -87,6 +88,21 @@ export default function PlayerView({ onBack }: Props) {
       usePlayerStore.getState().setMedia(file.name, URL.createObjectURL(file))
     }
   }
+
+  useEffect(() => {
+    if (fileType === 'office' && videoSrc) {
+      const ext = ('.' + (mediaName?.split('.').pop() || '')).toLowerCase()
+      if (['.doc', '.docx'].includes(ext)) {
+        window.aiPlayer?.docx?.preview(videoSrc).then((r) => setOfficeHtml(r?.success ? r.html || null : null))
+      } else if (['.xls', '.xlsx'].includes(ext)) {
+        window.aiPlayer?.xlsx?.preview(videoSrc).then((r) => setOfficeHtml(r?.success ? r.html || null : null))
+      } else {
+        setOfficeHtml(null)
+      }
+    } else {
+      setOfficeHtml(null)
+    }
+  }, [fileType, videoSrc, mediaName])
 
   useEffect(() => () => { if (hideTimer.current) clearTimeout(hideTimer.current) }, [])
 
@@ -144,10 +160,14 @@ export default function PlayerView({ onBack }: Props) {
         <iframe src={fileUrl} title="text" className="w-full h-full bg-white" />
       )}
       {fileType === 'office' && (
-        <div className="text-gray-400 text-center">
-          <p className="text-2xl mb-2">{mediaName}</p>
-          <p className="text-sm">Office 文件暂不支持预览，请右键用系统程序打开</p>
-        </div>
+        officeHtml ? (
+          <div className="w-full h-full overflow-auto bg-white text-black p-8" dangerouslySetInnerHTML={{ __html: officeHtml }} />
+        ) : (
+          <div className="text-gray-400 text-center">
+            <p className="text-2xl mb-2">{mediaName}</p>
+            <p className="text-sm">此 Office 文件暂不支持预览（Word 可预览，Excel/PPT 待做），请右键用系统程序打开</p>
+          </div>
+        )
       )}
       {fileType === 'none' && (
         <div className="text-gray-600 text-center">

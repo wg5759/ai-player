@@ -28,6 +28,12 @@ contextBridge.exposeInMainWorld('aiPlayer', {
   wifi: {
     url: () => ipcRenderer.invoke('wifi:url')
   },
+  xlsx: {
+    preview: (filePath) => ipcRenderer.invoke('xlsx:preview', filePath)
+  },
+  docx: {
+    preview: (filePath) => ipcRenderer.invoke('docx:preview', filePath)
+  },
   dialog: {
     openFile: () => ipcRenderer.invoke('dialog:openFile'),
     openFolder: () => ipcRenderer.invoke('dialog:openFolder')

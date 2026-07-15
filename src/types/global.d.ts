@@ -35,6 +35,12 @@ interface AiPlayerAPI {
   wifi?: {
     url: () => Promise<string | null>
   }
+  xlsx?: {
+    preview: (filePath: string) => Promise<{ success: boolean; html?: string; error?: string }>
+  }
+  docx?: {
+    preview: (filePath: string) => Promise<{ success: boolean; html?: string; error?: string }>
+  }
   dialog?: {
     openFile: () => Promise<string | null>
     openFolder: () => Promise<string | null>

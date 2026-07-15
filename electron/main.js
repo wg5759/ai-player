@@ -11,6 +11,8 @@ const { WifiTransfer } = require('./wifi-transfer')
 const { searchMovie } = require('./tmdb-service')
 const { CastService } = require('./cast-service')
 const { SyncService } = require('./sync-service')
+const mammoth = require('mammoth')
+const XLSX = require('xlsx')
 
 const isDev = !app.isPackaged
 let mpv = null
@@ -167,6 +169,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('cast:cast', (_e, deviceId, filePath) => castService.cast(deviceId, filePath))
   ipcMain.handle('dialog:openFile', async () => { const { dialog } = require('electron'); const r = await dialog.showOpenDialog(mainWindow, { filters: [{ name: '视频', extensions: ['mp4','mkv','avi','mov','flv','webm','mp3','flac','wav'] }], properties: ['openFile'] }); return r.canceled ? null : r.filePaths[0] })
   ipcMain.handle('dialog:openFolder', async () => { const { dialog } = require('electron'); const r = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] }); return r.canceled ? null : r.filePaths[0] })
+  ipcMain.handle('docx:preview', async (_e, filePath) => { try { const result = await mammoth.convertToHtml({ path: filePath }); return { success: true, html: result.value } } catch (e) { return { success: false, error: String(e) } } })
+  ipcMain.handle('xlsx:preview', async (_e, filePath) => { try { const wb = XLSX.readFile(filePath); const html = XLSX.utils.sheet_to_html(wb.Sheets[wb.SheetNames[0]]); return { success: true, html } } catch (e) { return { success: false, error: String(e) } } })
   ipcMain.handle('sync:url', () => (syncService ? syncService.getUrl() : null))
   ipcMain.handle('sync:setPeer', (_e, url) => {
     syncService?.setPeer(url)
