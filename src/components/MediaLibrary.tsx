@@ -19,6 +19,9 @@ export default function MediaLibrary({ onPlay }: Props) {
   const openPanel = useAgentStore((s) => s.openPanel)
   const [files, setFiles] = useState<MediaFile[]>([])
   const [activeTag, setActiveTag] = useState<string | null>(null)
+  const [dedupResults, setDedupResults] = useState<Array<{ original: string; duplicate: string; name: string }> | null>(null)
+  const [suggestResults, setSuggestResults] = useState<Array<{ tag: string; count: number; suggestion: string }> | null>(null)
+  const [plugins, setPlugins] = useState<Array<{ name: string; version?: string; description?: string }> | null>(null)
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
   const [networkSources, setNetworkSources] = useState<string[]>(() => {
@@ -48,6 +51,22 @@ export default function MediaLibrary({ onPlay }: Props) {
     localStorage.setItem('networkSources', JSON.stringify(next))
     setUrlInput('')
     setShowAddUrl(false)
+  }
+
+  const handleDedup = async () => {
+    const r = await window.aiPlayer?.media?.dedup()
+    setDedupResults(r || [])
+    setShowMore(true)
+  }
+  const handleSuggest = async () => {
+    const r = await window.aiPlayer?.media?.suggest()
+    setSuggestResults(r || [])
+    setShowMore(true)
+  }
+  const handlePlugins = async () => {
+    const r = await window.aiPlayer?.plugin?.list()
+    setPlugins(r || [])
+    setShowMore(true)
   }
 
   const handleSync = async (action: 'upload' | 'download') => {
@@ -163,6 +182,9 @@ export default function MediaLibrary({ onPlay }: Props) {
           + 网络源
         </button>
         <Recorder />
+        <button onClick={handleDedup} className="px-3 py-2 bg-player-surface rounded-lg text-sm hover:ring-1 ring-player-accent">去重</button>
+        <button onClick={handleSuggest} className="px-3 py-2 bg-player-surface rounded-lg text-sm hover:ring-1 ring-player-accent">粗剪</button>
+        <button onClick={handlePlugins} className="px-3 py-2 bg-player-surface rounded-lg text-sm hover:ring-1 ring-player-accent">插件</button>
         <button
           onClick={() => setShowMore(!showMore)}
           className="px-3 py-2 bg-player-surface rounded-lg text-sm hover:ring-1 ring-player-accent"
@@ -187,6 +209,34 @@ export default function MediaLibrary({ onPlay }: Props) {
       )}
 
       <div className="flex-1 overflow-y-auto px-6 pb-6">
+        {dedupResults && dedupResults.length > 0 && (
+          <div className="mb-6 bg-player-surface rounded-lg p-4">
+            <p className="text-sm">🔍 去重结果（{dedupResults.length} 组重复）</p>
+            {dedupResults.map((d, i) => (
+              <p key={i} className="text-xs text-gray-500 mt-1">{d.name}</p>
+            ))}
+          </div>
+        )}
+        {suggestResults && suggestResults.length > 0 && (
+          <div className="mb-6 bg-player-surface rounded-lg p-4">
+            <p className="text-sm">🎬 粗剪建议</p>
+            {suggestResults.map((s, i) => (
+              <p key={i} className="text-xs text-gray-500 mt-1">{s.suggestion}</p>
+            ))}
+          </div>
+        )}
+        {plugins && (
+          <div className="mb-6 bg-player-surface rounded-lg p-4">
+            <p className="text-sm">🧩 插件（{plugins.length}）</p>
+            {plugins.length === 0 ? (
+              <p className="text-xs text-gray-500 mt-1">将插件放入 ~/.ai-player/plugins/</p>
+            ) : (
+              plugins.map((p, i) => (
+                <p key={i} className="text-xs text-gray-500 mt-1">{p.name} {p.version}</p>
+              ))
+            )}
+          </div>
+        )}
         {showMore && wifiUrl && (
           <div className="mb-6 bg-player-surface rounded-lg p-4">
             <p className="text-sm">📱 WiFi 传文件</p>

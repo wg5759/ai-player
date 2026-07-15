@@ -48,6 +48,8 @@ class MpvService {
       `--input-ipc-server=${this.ipcPath}`,
       '--vo=gpu',
       '--hwdec=auto',
+      // F4 画质增强（超分）：待 mpv 嵌入(D1)后启用 --vf=lavfi=[scale=iw*2:ih*2:flags=lanczos]
+      // F7 4K HDR/杜比：待 mpv 嵌入(D1)后启用 --target-contrast=1000 --tone-mapping=auto
       '--input-vo-keyboard=no',
       '--input-cursor-passthrough=yes'
     ]
