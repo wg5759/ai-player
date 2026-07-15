@@ -16,6 +16,9 @@ const XLSX = require('xlsx')
 const { searchSubtitle } = require('./subtitle-service')
 const { DlnaReceiver } = require('./dlna-receiver')
 const log = require('./logger')
+const { analyzeDir, clusterByTag, findDuplicates, suggestClip } = require('./media-service')
+const { DlnaServer } = require('./dlna-server')
+const { listPlugins } = require('./plugin-service')
 
 const isDev = !app.isPackaged
 let mpv = null
@@ -24,6 +27,7 @@ let wifiTransfer = null
 let castService = null
 let syncService = null
 let dlnaReceiver = null
+let dlnaServer = null
 let mainWindow = null
 let mpvContainer = null
 let playerArea = null
@@ -127,6 +131,9 @@ app.whenReady().then(async () => {
   syncService = new SyncService()
   try { syncService.start() } catch (e) { console.error('同步服务启动失败:', e) }
 
+  dlnaServer = new DlnaServer()
+  try { dlnaServer.start(defaultVideoDir()) } catch (e) { console.error('DLNA Server 启动失败:', e) }
+
   dlnaReceiver = new DlnaReceiver()
   try {
     dlnaReceiver.start()
@@ -177,10 +184,35 @@ app.whenReady().then(async () => {
   ipcMain.handle('files:scan', (_e, dir) => scanDir(dir || defaultVideoDir()))
   ipcMain.handle('files:defaultDir', () => defaultVideoDir())
   ipcMain.handle('print:file', (_e, p) => printFile(p))
+  ipcMain.handle('print:text', async (_e, filePath) => {
+    try {
+      const content = require('fs').readFileSync(filePath, 'utf-8').slice(0, 50000)
+      const escaped = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const win = new BrowserWindow({ show: false })
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<pre style="font-family:monospace;white-space:pre-wrap;padding:20px">' + escaped + '</pre>'))
+      win.webContents.print({ printBackground: true })
+      setTimeout(() => win.close(), 2000)
+      return { success: true, action: '已发送打印' }
+    } catch (e) { return { success: false, error: String(e) } }
+  })
   ipcMain.handle('wifi:url', () => (wifiTransfer ? wifiTransfer.getUrl() : null))
   ipcMain.handle('wifi:pin', () => (wifiTransfer ? wifiTransfer.getPin() : null))
   ipcMain.handle('tmdb:search', (_e, name, apiKey) => searchMovie(name, apiKey || process.env.TMDB_API_KEY))
   ipcMain.handle('subtitle:search', (_e, name) => searchSubtitle(name, process.env.OPENSUBTITLES_API_KEY))
+  ipcMain.handle('media:analyze', (_e, dir) => {
+    const files = analyzeDir(dir || defaultVideoDir())
+    return { files, clusters: clusterByTag(files) }
+  })
+  ipcMain.handle('media:dedup', (_e, dir) => {
+    const files = analyzeDir(dir || defaultVideoDir())
+    return findDuplicates(files)
+  })
+  ipcMain.handle('media:suggest', (_e, dir) => {
+    const files = analyzeDir(dir || defaultVideoDir())
+    return suggestClip(files)
+  })
+  ipcMain.handle('dlna:serverUrl', () => dlnaServer ? `http://${require('./utils').getLanIp()}:18904` : null)
+  ipcMain.handle('plugin:list', () => listPlugins())
   ipcMain.handle('cast:scan', () => castService.scan())
   ipcMain.handle('cast:cast', (_e, deviceId, filePath) => castService.cast(deviceId, filePath))
   ipcMain.handle('dialog:openFile', async () => { const { dialog } = require('electron'); const r = await dialog.showOpenDialog(mainWindow, { filters: [{ name: '视频', extensions: ['mp4','mkv','avi','mov','flv','webm','mp3','flac','wav'] }], properties: ['openFile'] }); return r.canceled ? null : r.filePaths[0] })
@@ -211,4 +243,5 @@ app.on('before-quit', () => {
   if (castService) castService.stop()
   if (syncService) syncService.stop()
   if (dlnaReceiver) dlnaReceiver.stop()
+  if (dlnaServer) dlnaServer.stop()
 })

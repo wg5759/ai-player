@@ -7,6 +7,8 @@ interface MediaFile {
   path: string
   ext: string
   size: number
+  tags?: string[]
+  group?: string
 }
 
 interface Props {
@@ -16,6 +18,7 @@ interface Props {
 export default function MediaLibrary({ onPlay }: Props) {
   const openPanel = useAgentStore((s) => s.openPanel)
   const [files, setFiles] = useState<MediaFile[]>([])
+  const [activeTag, setActiveTag] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
   const [networkSources, setNetworkSources] = useState<string[]>(() => {
@@ -93,26 +96,31 @@ export default function MediaLibrary({ onPlay }: Props) {
   }, [])
 
   useEffect(() => {
-    if (!isDesktop || !window.aiPlayer?.files) return
+    if (!isDesktop || !window.aiPlayer?.media) return
     setLoading(true)
-    window.aiPlayer.files
-      .scan()
+    window.aiPlayer.media
+      .analyze()
       .then((result) => {
-        setFiles(result)
+        setFiles(result.files)
         setLoading(false)
       })
       .catch(() => setLoading(false))
   }, [])
 
-  const filtered = query
-    ? files.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()))
-    : files
+  const allTags = [...new Set(files.flatMap((f) => f.tags || []))]
+  const filtered = (activeTag ? files.filter((f) => f.tags?.includes(activeTag)) : files).filter(
+    (f) => (query ? f.name.toLowerCase().includes(query.toLowerCase()) : true)
+  )
 
-  const PRINTABLE = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.pdf']
+  const PRINTABLE = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.pdf', '.srt', '.ass', '.vtt', '.txt', '.md']
   const isPrintable = (ext: string) => PRINTABLE.includes(ext)
-  const handlePrint = (e: React.MouseEvent, path: string) => {
+  const handlePrint = (e: React.MouseEvent, path: string, ext: string) => {
     e.stopPropagation()
-    window.aiPlayer?.print?.file(path)
+    if (['.txt', '.md', '.srt', '.ass', '.vtt'].includes(ext)) {
+      window.aiPlayer?.print?.text(path)
+    } else {
+      window.aiPlayer?.print?.file(path)
+    }
   }
 
   const fmtSize = (b: number) => {
@@ -233,6 +241,25 @@ export default function MediaLibrary({ onPlay }: Props) {
             </div>
           </div>
         )}
+        {allTags.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              onClick={() => setActiveTag(null)}
+              className={`px-2 py-1 rounded text-xs ${!activeTag ? 'bg-player-accent' : 'bg-player-surface'}`}
+            >
+              全部
+            </button>
+            {allTags.slice(0, 12).map((tag) => (
+              <button
+                key={tag}
+                onClick={() => setActiveTag(tag)}
+                className={`px-2 py-1 rounded text-xs ${activeTag === tag ? 'bg-player-accent' : 'bg-player-surface'}`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
         <h2 className="text-gray-400 text-sm mb-3">
           {isDesktop ? `媒体库（${files.length}）` : '媒体库（Web 端示例）'}
         </h2>
@@ -254,7 +281,7 @@ export default function MediaLibrary({ onPlay }: Props) {
               >
                 {isPrintable(f.ext) && (
                   <button
-                    onClick={(e) => handlePrint(e, f.path)}
+                    onClick={(e) => handlePrint(e, f.path, f.ext)}
                     className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded bg-black/50 hover:bg-black/70 text-sm"
                   >
                     🖨️

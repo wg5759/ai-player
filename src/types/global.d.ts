@@ -36,6 +36,20 @@ interface AiPlayerAPI {
     url: () => Promise<string | null>
     pin: () => Promise<string | null>
   }
+  dlna?: {
+    serverUrl: () => Promise<string | null>
+  }
+  plugin?: {
+    list: () => Promise<Array<{ name: string; version?: string; description?: string; tools?: unknown[]; error?: string; file: string }>>
+  }
+  media?: {
+    analyze: (dir?: string) => Promise<{
+      files: Array<{ name: string; path: string; ext: string; type: string; size: number; tags: string[]; group: string }>
+      clusters: Record<string, unknown[]>
+    }>
+    dedup: (dir?: string) => Promise<Array<{ original: string; duplicate: string; name: string }>>
+    suggest: (dir?: string) => Promise<Array<{ tag: string; count: number; files: string[]; suggestion: string }>>
+  }
   receiver?: {
     onPlay: (cb: (url: string) => void) => () => void
   }
@@ -54,6 +68,7 @@ interface AiPlayerAPI {
   }
   print?: {
     file: (filePath: string) => Promise<{ success: boolean; action?: string; error?: string }>
+    text: (filePath: string) => Promise<{ success: boolean; action?: string; error?: string }>
   }
   files?: {
     scan: (dir?: string) => Promise<Array<{ name: string; path: string; ext: string; size: number }>>

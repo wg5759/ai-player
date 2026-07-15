@@ -29,6 +29,17 @@ contextBridge.exposeInMainWorld('aiPlayer', {
     url: () => ipcRenderer.invoke('wifi:url'),
     pin: () => ipcRenderer.invoke('wifi:pin')
   },
+  dlna: {
+    serverUrl: () => ipcRenderer.invoke('dlna:serverUrl')
+  },
+  plugin: {
+    list: () => ipcRenderer.invoke('plugin:list')
+  },
+  media: {
+    analyze: (dir) => ipcRenderer.invoke('media:analyze', dir),
+    dedup: (dir) => ipcRenderer.invoke('media:dedup', dir),
+    suggest: (dir) => ipcRenderer.invoke('media:suggest', dir)
+  },
   receiver: {
     onPlay: (cb) => {
       const h = (_e, url) => cb(url)
@@ -50,7 +61,8 @@ contextBridge.exposeInMainWorld('aiPlayer', {
     openFolder: () => ipcRenderer.invoke('dialog:openFolder')
   },
   print: {
-    file: (filePath) => ipcRenderer.invoke('print:file', filePath)
+    file: (filePath) => ipcRenderer.invoke('print:file', filePath),
+    text: (filePath) => ipcRenderer.invoke('print:text', filePath)
   },
   player: {
     loadFile: (p) => ipcRenderer.invoke('mpv:load', p),
