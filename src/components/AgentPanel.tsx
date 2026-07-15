@@ -1,8 +1,13 @@
+import { useState } from 'react'
 import { useAgentStore } from '../stores/agentStore'
 
 export default function AgentPanel() {
   const { messages, inputText, setInputText, send, closePanel, listening, toggleListening } =
     useAgentStore()
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('aiplayer_api_key') || '')
+  const saveKey = () => {
+    localStorage.setItem('aiplayer_api_key', apiKey)
+  }
 
   return (
     <div
@@ -30,6 +35,24 @@ export default function AgentPanel() {
             </button>
           </div>
         </div>
+
+        {!apiKey && (
+          <div className="px-4 py-3 border-b border-white/10">
+            <p className="text-xs text-gray-400 mb-2">配置 API Key（DeepSeek 或火山方舟）</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-..."
+                className="flex-1 bg-black/40 rounded px-2 py-1 text-xs outline-none"
+              />
+              <button onClick={saveKey} className="px-3 py-1 bg-player-accent rounded text-xs">
+                保存
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 输入框（置顶） */}
         <div className="px-4 py-3 border-b border-white/10 flex gap-2">

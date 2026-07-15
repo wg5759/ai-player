@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { usePlayerStore } from './playerStore'
 
 export interface AgentMessage {
   role: 'user' | 'agent'
@@ -44,18 +45,22 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     // 桌面端：调云端 Agent（function calling 控制播放）
     if (window.aiPlayer?.ai) {
       try {
-        const result = await window.aiPlayer.ai.chat(history)
+        const apiKey = localStorage.getItem('aiplayer_api_key') || undefined
+        const result = await window.aiPlayer.ai.chat(history, apiKey)
         set((s) => ({ messages: s.messages.filter((m) => m.text !== '思考中…') }))
         let reply = result.text
         if (result.toolResults.length > 0) {
-          const actions = result.toolResults
-            .map((t) =>
-              t.result && typeof t.result === 'object' && 'action' in t.result
-                ? String((t.result as { action: unknown }).action)
-                : t.tool
-            )
-            .join('；')
-          reply += `\n[已执行] ${actions}`
+          const ps = usePlayerStore.getState()
+          const descs: string[] = []
+          for (const t of result.toolResults) {
+            const r = t.result as { action?: string; value?: unknown; desc?: string }
+            if (r.desc) descs.push(r.desc)
+            if (r.action === 'pause') usePlayerStore.setState({ isPlaying: false })
+            else if (r.action === 'resume') usePlayerStore.setState({ isPlaying: true })
+            else if (r.action === 'seek' && typeof r.value === 'number') ps.seek(r.value)
+            else if (r.action === 'set_volume' && typeof r.value === 'number') ps.setVolume(r.value)
+          }
+          if (descs.length) reply += `\n[已执行] ${descs.join('；')}`
         }
         set({ thinking: false })
         get().addMessage('agent', reply)

@@ -110,34 +110,27 @@ class AgentEngine {
   async executeTool(name, args) {
     switch (name) {
       case 'pause':
-        this.mpv?.pause()
-        return { success: true, action: '已暂停' }
+        return { success: true, action: 'pause', desc: '已暂停' }
       case 'resume':
-        this.mpv?.play()
-        return { success: true, action: '继续播放' }
+        return { success: true, action: 'resume', desc: '继续播放' }
       case 'seek':
-        this.mpv?.seek(args.seconds)
-        return { success: true, action: `跳转到 ${args.seconds} 秒` }
+        return { success: true, action: 'seek', value: args.seconds, desc: `跳转到 ${args.seconds} 秒` }
       case 'set_volume':
-        this.mpv?.setVolume(args.level)
-        return { success: true, action: `音量设为 ${args.level}` }
+        return { success: true, action: 'set_volume', value: args.level, desc: `音量设为 ${args.level}` }
       case 'set_subtitle':
-        this.mpv?.send({ command: ['set_property', 'sub-visibility', args.visible] })
-        return { success: true, action: args.visible ? '字幕已开' : '字幕已关' }
-      case 'print_file':
-        return await require('./print-file').printFile(args.file_path)
+        return { success: true, action: 'set_subtitle', value: args.visible, desc: args.visible ? '字幕已开' : '字幕已关' }
       case 'load_subtitle':
-        this.mpv?.loadSubtitle(args.file_path)
-        return { success: true, action: '字幕已加载' }
+        return { success: true, action: 'load_subtitle', value: args.file_path, desc: '字幕已加载' }
       default:
         return { error: '未知工具: ' + name }
     }
   }
 
-  async chat(messages) {
-    if (!this.isAvailable()) {
+  async chat(messages, apiKey = null) {
+    const key = apiKey || this.apiKey
+    if (!key) {
       return {
-        text: '[Agent 引擎未配置 API key] 请设置 DEEPSEEK_API_KEY 或 VOLCENGINE_API_KEY 环境变量。当前为占位回复。',
+        text: '[未配置 API key] 请在 Agent 面板填入 DeepSeek 或火山方舟 API key。',
         toolResults: []
       }
     }
@@ -152,7 +145,7 @@ class AgentEngine {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`
+          Authorization: `Bearer ${key}`
         },
         body: JSON.stringify({ model: this.model, messages: msgs, tools: TOOLS }),
         signal: controller.signal

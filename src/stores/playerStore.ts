@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 interface PlayerState {
   isPlaying: boolean
@@ -20,22 +21,30 @@ interface PlayerState {
   setControlsVisible: (v: boolean) => void
 }
 
-export const usePlayerStore = create<PlayerState>((set) => ({
-  isPlaying: false,
-  volume: 80,
-  currentTime: 0,
-  duration: 0,
-  isFullscreen: false,
-  subtitleVisible: true,
-  mediaName: null,
-  videoSrc: null,
-  controlsVisible: true,
-  togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
-  setVolume: (v) => set({ volume: v }),
-  seek: (t) => set({ currentTime: t }),
-  setDuration: (d) => set({ duration: d }),
-  toggleFullscreen: () => set((s) => ({ isFullscreen: !s.isFullscreen })),
-  toggleSubtitle: () => set((s) => ({ subtitleVisible: !s.subtitleVisible })),
-  setMedia: (name, src) => set({ mediaName: name, videoSrc: src, isPlaying: true, currentTime: 0 }),
-  setControlsVisible: (v) => set({ controlsVisible: v })
-}))
+export const usePlayerStore = create<PlayerState>()(
+  persist(
+    (set) => ({
+      isPlaying: false,
+      volume: 80,
+      currentTime: 0,
+      duration: 0,
+      isFullscreen: false,
+      subtitleVisible: true,
+      mediaName: null,
+      videoSrc: null,
+      controlsVisible: true,
+      togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
+      setVolume: (v) => set({ volume: v }),
+      seek: (t) => set({ currentTime: t }),
+      setDuration: (d) => set({ duration: d }),
+      toggleFullscreen: () => set((s) => ({ isFullscreen: !s.isFullscreen })),
+      toggleSubtitle: () => set((s) => ({ subtitleVisible: !s.subtitleVisible })),
+      setMedia: (name, src) => set({ mediaName: name, videoSrc: src, isPlaying: true, currentTime: 0 }),
+      setControlsVisible: (v) => set({ controlsVisible: v })
+    }),
+    {
+      name: 'ai-player-store',
+      partialize: (s) => ({ volume: s.volume, subtitleVisible: s.subtitleVisible })
+    }
+  )
+)

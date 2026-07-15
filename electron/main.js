@@ -14,6 +14,7 @@ const { SyncService } = require('./sync-service')
 const mammoth = require('mammoth')
 const XLSX = require('xlsx')
 const { searchSubtitle } = require('./subtitle-service')
+const { DlnaReceiver } = require('./dlna-receiver')
 
 const isDev = !app.isPackaged
 let mpv = null
@@ -21,6 +22,7 @@ let agentEngine = null
 let wifiTransfer = null
 let castService = null
 let syncService = null
+let dlnaReceiver = null
 let mainWindow = null
 let mpvContainer = null
 let playerArea = null
@@ -122,6 +124,14 @@ app.whenReady().then(async () => {
   syncService = new SyncService()
   try { syncService.start() } catch (e) { console.error('同步服务启动失败:', e) }
 
+  dlnaReceiver = new DlnaReceiver()
+  try {
+    dlnaReceiver.start()
+    dlnaReceiver.onPlay = (url) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('receiver:play', url)
+    }
+  } catch (e) { console.error('DLNA接收启动失败:', e) }
+
   // mpv 事件转发渲染进程
   mpv.on((event, data) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -159,7 +169,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('mpv:subtitle-visible', (_e, v) => { mpv.setSubtitleVisible(v); return true })
 
   // IPC：Agent 对话（function calling 控制播放）
-  ipcMain.handle('ai:chat', (_e, messages) => agentEngine.chat(messages))
+  ipcMain.handle('ai:chat', (_e, messages, apiKey) => agentEngine.chat(messages, apiKey))
 
   ipcMain.handle('files:scan', (_e, dir) => scanDir(dir || defaultVideoDir()))
   ipcMain.handle('files:defaultDir', () => defaultVideoDir())
@@ -196,4 +206,5 @@ app.on('before-quit', () => {
   if (wifiTransfer) wifiTransfer.stop()
   if (castService) castService.stop()
   if (syncService) syncService.stop()
+  if (dlnaReceiver) dlnaReceiver.stop()
 })

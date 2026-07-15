@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('aiPlayer', {
   isElectron: true,
   version: '0.1.0',
   ai: {
-    chat: (messages) => ipcRenderer.invoke('ai:chat', messages)
+    chat: (messages, apiKey) => ipcRenderer.invoke('ai:chat', messages, apiKey)
   },
   files: {
     scan: (dir) => ipcRenderer.invoke('files:scan', dir),
@@ -27,6 +27,13 @@ contextBridge.exposeInMainWorld('aiPlayer', {
   },
   wifi: {
     url: () => ipcRenderer.invoke('wifi:url')
+  },
+  receiver: {
+    onPlay: (cb) => {
+      const h = (_e, url) => cb(url)
+      ipcRenderer.on('receiver:play', h)
+      return () => ipcRenderer.removeListener('receiver:play', h)
+    }
   },
   subtitle: {
     search: (name) => ipcRenderer.invoke('subtitle:search', name)

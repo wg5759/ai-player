@@ -35,6 +35,9 @@ interface AiPlayerAPI {
   wifi?: {
     url: () => Promise<string | null>
   }
+  receiver?: {
+    onPlay: (cb: (url: string) => void) => () => void
+  }
   subtitle?: {
     search: (name: string) => Promise<Array<{ id: string; language: string; release: string; url: string }> | null>
   }
@@ -56,7 +59,7 @@ interface AiPlayerAPI {
     defaultDir: () => Promise<string>
   }
   ai?: {
-    chat: (messages: Array<{ role: string; content: string }>) => Promise<{
+    chat: (messages: Array<{ role: string; content: string }>, apiKey?: string) => Promise<{
       text: string
       toolResults: Array<{
         tool: string

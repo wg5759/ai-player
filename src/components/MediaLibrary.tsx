@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useAgentStore } from '../stores/agentStore'
+import Recorder from './Recorder'
 
 interface MediaFile {
   name: string
@@ -151,6 +152,7 @@ export default function MediaLibrary({ onPlay }: Props) {
         >
           + 网络源
         </button>
+        <Recorder />
         <button
           onClick={() => setShowMore(!showMore)}
           className="px-3 py-2 bg-player-surface rounded-lg text-sm hover:ring-1 ring-player-accent"
