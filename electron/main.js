@@ -53,12 +53,12 @@ app.whenReady().then(async () => {
   agentEngine = new AgentEngine(mpv)
 
   wifiTransfer = new WifiTransfer()
-  wifiTransfer.start()
+  try { wifiTransfer.start() } catch (e) { console.error('WiFi 传输启动失败:', e) }
 
   castService = new CastService()
 
   syncService = new SyncService()
-  syncService.start()
+  try { syncService.start() } catch (e) { console.error('同步服务启动失败:', e) }
 
   // mpv 事件转发渲染进程
   mpv.on((event, data) => {
@@ -74,6 +74,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('mpv:seek', (_e, s) => { mpv.seek(s); return true })
   ipcMain.handle('mpv:volume', (_e, v) => { mpv.setVolume(v); return true })
   ipcMain.handle('mpv:subtitle', (_e, p) => { mpv.loadSubtitle(p); return true })
+  ipcMain.handle('mpv:subtitle-visible', (_e, v) => { mpv.setSubtitleVisible(v); return true })
 
   // IPC：Agent 对话（function calling 控制播放）
   ipcMain.handle('ai:chat', (_e, messages) => agentEngine.chat(messages))
@@ -105,4 +106,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   if (mpv) mpv.stop()
   if (wifiTransfer) wifiTransfer.stop()
+  if (castService) castService.stop()
+  if (syncService) syncService.stop()
 })

@@ -57,8 +57,13 @@ class MpvService {
     this.proc.on('error', (err) => console.error('[MpvService] mpv 启动失败:', err))
     this.proc.on('exit', (code) => console.log(`[MpvService] mpv 退出 code=${code}`))
 
-    await new Promise((r) => setTimeout(r, 800))
-    this.connectIpc()
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setTimeout(r, 300))
+      this.connectIpc()
+      await new Promise((r) => setTimeout(r, 200))
+      if (this.ipc && !this.ipc.destroyed) break
+    }
+    if (!this.ipc) console.error('[MpvService] IPC 连接失败，请检查 mpv 启动')
 
     // 订阅属性变化（播放位置/时长/暂停/结束/音量）
     this.send({ command: ['observe_property', 1, 'time-pos'] })
@@ -108,6 +113,7 @@ class MpvService {
   seek(seconds) { this.send({ command: ['seek', seconds, 'absolute'] }) }
   setVolume(level) { this.send({ command: ['set_property', 'volume', level] }) }
   loadSubtitle(filePath) { this.send({ command: ['sub-add', filePath] }) }
+  setSubtitleVisible(visible) { this.send({ command: ['set_property', 'sub-visibility', visible] }) }
 
   stop() {
     if (this.ipc) { this.ipc.destroy(); this.ipc = null }

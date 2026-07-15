@@ -146,14 +146,18 @@ class AgentEngine {
     const toolResults = []
 
     for (let i = 0; i < 5; i++) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 30000)
       const resp = await fetch(`${this.apiBase}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({ model: this.model, messages: msgs, tools: TOOLS })
+        body: JSON.stringify({ model: this.model, messages: msgs, tools: TOOLS }),
+        signal: controller.signal
       })
+      clearTimeout(timer)
 
       if (!resp.ok) {
         const errText = await resp.text()
@@ -169,7 +173,8 @@ class AgentEngine {
 
       msgs.push(msg)
       for (const tc of msg.tool_calls) {
-        const args = JSON.parse(tc.function.arguments || '{}')
+        let args = {}
+        try { args = JSON.parse(tc.function.arguments || '{}') } catch {}
         const result = await this.executeTool(tc.function.name, args)
         toolResults.push({ tool: tc.function.name, args, result })
         msgs.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) })

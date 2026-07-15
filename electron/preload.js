@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('aiPlayer', {
     seek: (s) => ipcRenderer.invoke('mpv:seek', s),
     setVolume: (v) => ipcRenderer.invoke('mpv:volume', v),
     loadSubtitle: (p) => ipcRenderer.invoke('mpv:subtitle', p),
+    setSubtitleVisible: (v) => ipcRenderer.invoke('mpv:subtitle-visible', v),
     onEvent: (cb) => {
       const handler = (_e, data) => cb(data)
       ipcRenderer.on('mpv:event', handler)

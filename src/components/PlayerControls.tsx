@@ -65,7 +65,11 @@ export default function PlayerControls() {
 
         {/* 3. 字幕 */}
         <button
-          onClick={toggleSubtitle}
+          onClick={() => {
+            const newVal = !usePlayerStore.getState().subtitleVisible
+            toggleSubtitle()
+            window.aiPlayer?.player?.setSubtitleVisible(newVal)
+          }}
           className={`px-3 py-1 rounded text-sm ${subtitleVisible ? 'text-white' : 'text-gray-500'}`}
         >
           字幕
