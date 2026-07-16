@@ -2,6 +2,17 @@
 // dev: 加载 Vite dev server；prod: 加载构建产物
 // 集成 mpv sidecar，IPC 桥接渲染进程
 const { app, BrowserWindow, ipcMain, Menu } = require('electron')
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+}
 const path = require('path')
 const { MpvService } = require('./mpv-service')
 const { AgentEngine } = require('./llm-service')
@@ -119,7 +130,24 @@ app.whenReady().then(async () => {
   const win = createWindow()
 
   mpv = new MpvService()
-  await mpv.start(null)
+  const useEmbed = process.env.MPV_EMBED === '1'
+  if (useEmbed) {
+    const pb = win.getBounds()
+    mpvContainer = new BrowserWindow({
+      parent: win, frame: false, show: false, skipTaskbar: true,
+      resizable: false, hasShadow: false, backgroundColor: '#000000',
+      width: 800, height: 450,
+      x: pb.x + Math.round((pb.width - 800) / 2),
+      y: pb.y + Math.round((pb.height - 450) / 2)
+    })
+    mpvContainer.loadURL('about:blank')
+    const hwnd = mpvContainer.getNativeWindowHandle().readInt32LE(0)
+    await mpv.start(hwnd)
+    log.info('mpv 嵌入模式启动，HWND=' + hwnd)
+  } else {
+    await mpv.start(null)
+    log.info('mpv 后台模式启动（HTML5 video 显示）')
+  }
 
   agentEngine = new AgentEngine(mpv)
 

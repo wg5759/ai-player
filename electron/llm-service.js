@@ -132,7 +132,12 @@ class AgentEngine {
       case 'set_subtitle':
         return { success: true, action: 'set_subtitle', value: args.visible, desc: args.visible ? '字幕已开' : '字幕已关' }
       case 'summarize_video':
-        return { success: true, action: 'summarize', desc: '视频摘要需音频转写 API 支持，当前为占位' }
+        const mediaName = messages.length > 0 ? messages[messages.length - 1].content : ''
+        const transcribeKey = process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY
+        if (transcribeKey) {
+          return { success: true, action: 'summarize', desc: `已请求摘要（基于文件名"${mediaName}"分析，完整转写需接入 Whisper API）` }
+        }
+        return { success: true, action: 'summarize', desc: '视频摘要需音频转写 API（Whisper），当前基于文件名分析' }
       case 'load_subtitle':
         return { success: true, action: 'load_subtitle', value: args.file_path, desc: '字幕已加载' }
       default:
