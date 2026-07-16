@@ -47,7 +47,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       try {
         const apiKey = localStorage.getItem('aiplayer_api_key') || undefined
         const result = await window.aiPlayer.ai.chat(history, apiKey)
-        set((s) => ({ messages: s.messages.filter((m) => m.text !== '思考中…') }))
+        set((s) => {
+          const msgs = [...s.messages]
+          if (msgs.length > 0 && msgs[msgs.length - 1].text === '思考中…') msgs.pop()
+          return { messages: msgs }
+        })
         let reply = result.text
         if (result.toolResults.length > 0) {
           const ps = usePlayerStore.getState()

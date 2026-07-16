@@ -128,6 +128,10 @@ class CastService {
         },
         body
       })
+      if (resp.ok) {
+        const playBody = '<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Speed>1</Speed></u:Play></s:Body></s:Envelope>'
+        await fetch(device.controlUrl, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset="utf-8"', SOAPAction: '"urn:schemas-upnp-org:service:AVTransport:1#Play"' }, body: playBody })
+      }
       return {
         success: resp.ok,
         action: resp.ok ? `已投屏到 ${device.name}` : `投屏失败 ${resp.status}`

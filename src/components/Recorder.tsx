@@ -23,7 +23,7 @@ export default function Recorder() {
         URL.revokeObjectURL(url)
         stream.getTracks().forEach((t) => t.stop())
       }
-      recorder.start()
+      recorder.start(10000)
       recorderRef.current = recorder
       setRecording(true)
     } catch (e) {

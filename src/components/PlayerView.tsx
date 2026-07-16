@@ -7,9 +7,9 @@ interface Props {
 }
 
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.ts', '.m4v', '.wmv']
-const AUDIO_EXTS = ['.mp3', '.flac', '.wav', '.aac', '.m4a', '.ogg']
-const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg']
-const TEXT_EXTS = ['.txt', '.md', '.json', '.csv', '.xml', '.html', '.css', '.js', '.ts', '.py', '.java', '.c', '.cpp', '.sh', '.yml', '.yaml', '.ini', '.log', '.sql']
+const AUDIO_EXTS = ['.mp3', '.flac', '.wav', '.aac', '.m4a', '.ogg', '.wma']
+const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg', '.ico', '.tif', '.tiff']
+const TEXT_EXTS = ['.txt', '.md', '.json', '.csv', '.xml', '.html', '.htm', '.css', '.js', '.ts', '.tsx', '.jsx', '.py', '.java', '.c', '.cpp', '.h', '.sh', '.yml', '.yaml', '.ini', '.conf', '.log', '.bat', '.ps1', '.sql', '.toml', '.env']
 const OFFICE_EXTS = ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']
 
 function getFileType(name?: string | null): string {
@@ -95,7 +95,7 @@ export default function PlayerView({ onBack }: Props) {
   useEffect(() => {
     if (fileType === 'office' && videoSrc) {
       const ext = ('.' + (mediaName?.split('.').pop() || '')).toLowerCase()
-      if (['.doc', '.docx'].includes(ext)) {
+      if (ext === '.docx') {
         window.aiPlayer?.docx?.preview(videoSrc).then((r) => setOfficeHtml(r?.success ? r.html || null : null))
       } else if (['.xls', '.xlsx'].includes(ext)) {
         window.aiPlayer?.xlsx?.preview(videoSrc).then((r) => setOfficeHtml(r?.success ? r.html || null : null))

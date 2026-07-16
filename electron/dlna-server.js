@@ -68,7 +68,7 @@ class DlnaServer {
     for (const e of entries) {
       const full = path.join(dir, e.name)
       if (e.isDirectory()) results.push(...this.scanDir(full, depth + 1))
-      else if (e.isFile()) results.push({ name: e.name, url: `http://${getLanIp()}:${this.port}/${encodeURIComponent(full)}` })
+      else if (e.isFile()) results.push({ name: e.name })
     }
     return results
   }
