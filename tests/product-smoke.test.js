@@ -34,9 +34,35 @@ test('player right-click is a real context menu, not an open-file shortcut', () 
 
 test('Explorer Open with forwards initial and second-instance media paths to the renderer', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8')
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'electron', 'preload.js'), 'utf8')
+  const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
   assert.match(main, /second-instance['"],\s*\([^)]*argv[^)]*\)\s*=>[\s\S]{0,500}queueExternalMediaArgs\(argv\)/)
   assert.match(main, /queueExternalMediaArgs\(process\.argv\)/)
   assert.match(main, /did-finish-load['"][\s\S]{0,300}flushPendingExternalMedia\(\)/)
+  assert.match(preload, /external-media:accepted/)
+  assert.match(app, /confirmOpenFile\?\.\(filePath\)/)
+  assert.match(main, /播放界面已接收外部文件/)
+})
+
+test('both Windows installers repair the per-user Open with command without taking over defaults', () => {
+  const packageConfig = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'))
+  const leanConfig = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.lean.yml'), 'utf8')
+  const installer = fs.readFileSync(path.join(__dirname, '..', 'build', 'installer.nsh'), 'utf8')
+  assert.equal(packageConfig.build.nsis.include, 'build/installer.nsh')
+  assert.match(leanConfig, /include:\s*build\/installer\.nsh/)
+  assert.match(installer, /Applications\\\$\{APP_EXECUTABLE_FILENAME\}\\shell\\open\\command/)
+  assert.match(installer, /\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}/)
+  assert.match(installer, /SupportedTypes[\s\S]*\.mp4/)
+  assert.doesNotMatch(installer, /Software\\Classes\\\.mp4/)
+})
+
+test('service worker registration is web-only and cannot fail in packaged Electron', () => {
+  const vite = fs.readFileSync(path.join(__dirname, '..', 'vite.config.ts'), 'utf8')
+  const entry = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.tsx'), 'utf8')
+  assert.match(vite, /injectRegister:\s*null/)
+  assert.match(entry, /location\.protocol === 'http:'[\s\S]*location\.protocol === 'https:'/)
+  assert.match(entry, /navigator\.serviceWorker\.register/)
+  assert.doesNotMatch(entry, /virtual:pwa-register/)
 })
 
 test('Explorer Open with accepts supported files with spaces and Chinese characters only', () => {

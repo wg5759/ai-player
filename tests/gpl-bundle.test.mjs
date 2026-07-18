@@ -20,6 +20,8 @@ test('GPL rebuild pins mpv and emits matched binary and corresponding-source arc
   assert.match(workflow, /mpv-v0\.41\.0-windows-x64-gpl-complete/)
   assert.match(packager, /build-fetched-git/)
   assert.match(packager, /build-fetched-cmake/)
+  assert.match(packager, /robocopy\.exe/)
+  assert.match(packager, /if \(\$code -gt 7\)/)
   assert.match(packager, /SOURCE-MANIFEST\.json/)
   assert.match(packager, /GPL-BUNDLE-MANIFEST\.json/)
   assert.match(packager, /subprojects\/ffmpeg/)

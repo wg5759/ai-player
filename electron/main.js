@@ -66,6 +66,12 @@ ipcMain.on('app:version', (event) => {
   event.returnValue = app.getVersion()
 })
 
+ipcMain.on('external-media:accepted', (event, filePath) => {
+  assertTrustedSender(event)
+  const acceptedPath = extractExternalMediaPaths([filePath])[0]
+  if (acceptedPath) log.info(`播放界面已接收外部文件: ${path.basename(acceptedPath)}`)
+})
+
 function stopActiveRender() {
   if (!activeRecutProcess || activeRecutProcess.killed) return false
   if (process.platform === 'win32' && activeRecutProcess.pid) {

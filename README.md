@@ -1,6 +1,8 @@
-# AI播放器
+# AgentHub AI Player（AI播放器）
 
-AI播放器是一个面向 AI 时代的本地媒体工作台：在可靠播放的基础上，提供字幕、翻译、拉片、深度解剖、原创重构、成片渲染、模型接入与受控的电脑操作能力。
+AgentHub AI Player 是一个面向 AI 时代的本地媒体工作台：在可靠播放的基础上，提供字幕、翻译、拉片、深度解剖、原创重构、成片渲染、模型接入与受控的电脑操作能力。
+
+开源项目与未来仓库统一使用 `AgentHub AI Player` / `AgentHub-AI-Player`。Windows 0.6.x 暂时保留“AI播放器”产品名与可执行文件名，以兼容已有安装路径和“打开方式”注册；正式改名必须经过带旧关联迁移的版本升级，不能只改文件名。
 
 > 当前版本：`0.6.1`。Windows 11 x64 已完成安装包、真实 EXE、视频加载和 MP4 导出验收；macOS、Linux、Android、iOS 尚未完成同等级端到端验证。请以 [MULTIPLATFORM.md](MULTIPLATFORM.md) 为准，不把“代码存在”或“CI 配置存在”当作已交付。
 
@@ -65,6 +67,6 @@ pnpm release:public:verify
 
 ## 开源边界
 
-项目自有源代码按 [Apache License 2.0](LICENSE) 开放。第三方组件和模型继续受各自许可约束，参见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。Apache-2.0 不授予“AI播放器”名称、蜂鸟图标或其他品牌标识的使用权，参见 [TRADEMARKS.md](TRADEMARKS.md)。
+项目自有源代码按 [Apache License 2.0](LICENSE) 开放。第三方组件和模型继续受各自许可约束，参见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。Apache-2.0 不授予“AgentHub AI Player”“AI播放器”名称、蜂鸟图标或其他品牌标识的使用权，参见 [TRADEMARKS.md](TRADEMARKS.md)。
 
 参与开发请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题请阅读 [SECURITY.md](SECURITY.md)。

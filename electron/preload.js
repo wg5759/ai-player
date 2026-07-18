@@ -121,6 +121,7 @@ contextBridge.exposeInMainWorld('aiPlayer', {
     onOpenFile: (cb) => {
       return subscribeOpenFile(cb)
     },
+    confirmOpenFile: (filePath) => ipcRenderer.send('external-media:accepted', filePath),
     onOpenFolder: (cb) => {
       const h = (_e, dirPath) => cb(dirPath)
       ipcRenderer.on('menu:openFolder', h)

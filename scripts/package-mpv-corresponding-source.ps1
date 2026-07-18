@@ -59,13 +59,48 @@ function Get-GitValue([string]$Repository, [string[]]$Arguments) {
     }
 }
 
-function Copy-SourceTree([string]$Source, [string]$Destination) {
+function Copy-DirectoryTree([string]$Source, [string]$Destination, [string[]]$ExcludedDirectories = @()) {
     [System.IO.Directory]::CreateDirectory($Destination) | Out-Null
-    Get-ChildItem -LiteralPath $Source -Force | ForEach-Object {
-        if ($_.Name -ne '.git') {
-            Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
-        }
+    $arguments = @(
+        $Source,
+        $Destination,
+        '/E',
+        '/COPY:DAT',
+        '/DCOPY:DAT',
+        '/R:2',
+        '/W:1',
+        '/XJ',
+        '/NFL',
+        '/NDL',
+        '/NJH',
+        '/NJS',
+        '/NP'
+    )
+    if ($ExcludedDirectories.Count -gt 0) {
+        $arguments += '/XD'
+        $arguments += $ExcludedDirectories
     }
+
+    # Copy-Item -Recurse can fail on otherwise valid third-party source trees
+    # (SDL's Android project triggered this on the GitHub Windows runner).
+    # Robocopy handles those trees and reports 0..7 for successful outcomes.
+    $previous = $PSNativeCommandUseErrorActionPreference
+    $script:PSNativeCommandUseErrorActionPreference = $false
+    try {
+        & robocopy.exe @arguments | Out-Host
+        $code = $LASTEXITCODE
+    } finally {
+        $script:PSNativeCommandUseErrorActionPreference = $previous
+    }
+    if ($code -gt 7) {
+        throw "Robocopy failed with exit code $code while copying $Source"
+    }
+}
+
+function Copy-SourceTree([string]$Source, [string]$Destination) {
+    Copy-DirectoryTree -Source $Source -Destination $Destination -ExcludedDirectories @(
+        (Join-Path $Source '.git')
+    )
 }
 
 $mpv = (Resolve-Path -LiteralPath $MpvRoot).Path.TrimEnd('\')
@@ -87,12 +122,12 @@ Remove-ChildTree -Path $binaryStage -Parent $output
 [System.IO.Directory]::CreateDirectory($stage) | Out-Null
 [System.IO.Directory]::CreateDirectory($binaryStage) | Out-Null
 
-$topLevelExclusions = @('.git', 'build', 'cmake', '.ccache')
-Get-ChildItem -LiteralPath $mpv -Force | ForEach-Object {
-    if ($topLevelExclusions -notcontains $_.Name) {
-        Copy-Item -LiteralPath $_.FullName -Destination $stage -Recurse -Force
-    }
-}
+Copy-DirectoryTree -Source $mpv -Destination $stage -ExcludedDirectories @(
+    (Join-Path $mpv '.git'),
+    (Join-Path $mpv 'build'),
+    (Join-Path $mpv 'cmake'),
+    (Join-Path $mpv '.ccache')
+)
 
 $repositoryRoots = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 Get-ChildItem -LiteralPath $mpv -Force -Recurse -Filter '.git' | ForEach-Object {

@@ -31,6 +31,7 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
   installerIcon: resources/icons/app-icon.ico
   uninstallerIcon: resources/icons/app-icon.ico
   artifactName: AI播放器标准版安装包-${version}.${ext}

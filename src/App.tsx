@@ -57,6 +57,7 @@ function AppInner() {
     const offFile = menu.onOpenFile((filePath) => {
       usePlayerStore.getState().setMedia(filePath.split(/[\\/]/).pop() || filePath, filePath)
       setView('player')
+      menu.confirmOpenFile?.(filePath)
     })
     const offFolder = menu.onOpenFolder((dirPath) => {
       setLibraryRoot(dirPath)

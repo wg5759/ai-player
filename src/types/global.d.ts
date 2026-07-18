@@ -134,6 +134,7 @@ interface AiPlayerAPI {
   menu?: {
     onAction: (cb: (action: string) => void) => () => void
     onOpenFile: (cb: (filePath: string) => void) => () => void
+    confirmOpenFile?: (filePath: string) => void
     onOpenFolder: (cb: (dirPath: string) => void) => () => void
     onAgent: (cb: () => void) => () => void
   }
