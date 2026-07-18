@@ -94,6 +94,21 @@ jobs:
 
           New-Item -Path subprojects -ItemType Directory -Force | Out-Null
           Clone-Pinned 'https://github.com/google/shaderc' 'subprojects/shaderc_cmake' $env:SHADERC_COMMIT
+          $shaderThirdParty = 'subprojects/shaderc_cmake/third_party/CMakeLists.txt'
+          $shaderText = Get-Content -LiteralPath $shaderThirdParty -Raw
+          $unsupported = '    set(GLSLANG_ENABLE_INSTALL $<NOT:${SKIP_GLSLANG_INSTALL}>)'
+          if (-not $shaderText.Contains($unsupported)) {
+            throw 'Expected shaderc GLSlang install expression was not found.'
+          }
+          $compatible = @(
+            '    if (SKIP_GLSLANG_INSTALL)'
+            '      set(GLSLANG_ENABLE_INSTALL OFF)'
+            '    else()'
+            '      set(GLSLANG_ENABLE_INSTALL ON)'
+            '    endif()'
+          ) -join "`n"
+          $shaderText.Replace($unsupported, $compatible) |
+            Set-Content -LiteralPath $shaderThirdParty -Encoding utf8 -NoNewline
           Clone-Pinned 'https://gitlab.freedesktop.org/gstreamer/meson-ports/ffmpeg.git' 'subprojects/ffmpeg' $env:FFMPEG_MESON_COMMIT
           Clone-Pinned 'https://github.com/libass/libass' 'subprojects/libass' $env:LIBASS_COMMIT
           Clone-Pinned 'https://code.videolan.org/videolan/libplacebo.git' 'subprojects/libplacebo' $env:LIBPLACEBO_COMMIT
