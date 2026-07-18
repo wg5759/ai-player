@@ -1,0 +1,104 @@
+name: Build GPL mpv with Corresponding Source
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - .github/workflows/mpv-gpl-bundle.yml
+      - scripts/package-mpv-corresponding-source.ps1
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      VS: C:\Program Files\Microsoft Visual Studio\2022\Enterprise
+      CC: ccache clang
+      CXX: ccache clang++
+      CC_LD: lld-link
+      CXX_LD: lld-link
+      WINDRES: llvm-rc
+      RUST_LD: lld-link
+      RUSTC: rustc --target x86_64-pc-windows-msvc
+      CCACHE_BASEDIR: ${{ github.workspace }}\mpv-source
+      CCACHE_DIR: ${{ github.workspace }}\.ccache
+      CCACHE_MAXSIZE: 500M
+      MPV_COMMIT: 41f6a645068483470267271e1d09966ca3b9f413
+
+    steps:
+      - name: Disable automatic line-ending conversion
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Check out redistributor recipes
+        uses: actions/checkout@v7
+        with:
+          path: ai-player
+
+      - name: Check out exact mpv source
+        uses: actions/checkout@v7
+        with:
+          repository: mpv-player/mpv
+          ref: ${{ env.MPV_COMMIT }}
+          fetch-depth: 1
+          path: mpv-source
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install build tools
+        shell: pwsh
+        working-directory: mpv-source
+        run: |
+          python -m pip install meson==1.9.2
+          choco install ccache nasm --no-progress -y
+          ./ci/install-cmake.ps1 -arch x64
+          meson wrap update-db
+          meson wrap install expat
+          meson wrap install harfbuzz
+          meson wrap install libpng
+          meson wrap install zlib
+
+      - name: Build exact GPL binary
+        shell: pwsh
+        working-directory: mpv-source
+        run: |
+          $env:PATH = ($env:PATH -split ';' | Where-Object {
+            $_ -ne 'C:\Program Files\LLVM\bin' -and
+            $_ -ne 'C:\Program Files\CMake\bin' -and
+            $_ -ne 'C:\Strawberry\c\bin'
+          }) -join ';'
+          $env:PATH = "$pwd\cmake\bin;" + $env:PATH + ';C:\Program Files\NASM'
+          Import-Module "$env:VS\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $env:VS -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          ./ci/build-win32.ps1
+
+      - name: Package binary and complete corresponding source
+        shell: pwsh
+        run: |
+          $env:PATH = "$pwd\mpv-source\cmake\bin;" + $env:PATH + ';C:\Program Files\NASM'
+          Import-Module "$env:VS\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $env:VS -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          ./ai-player/scripts/package-mpv-corresponding-source.ps1 `
+            -MpvRoot ./mpv-source `
+            -RedistributorRoot ./ai-player `
+            -OutputDir ./gpl-artifacts
+
+      - name: Upload matched binary and source evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: mpv-v0.41.0-windows-x64-gpl-complete
+          path: gpl-artifacts/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+
