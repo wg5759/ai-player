@@ -8,6 +8,8 @@ const policy = JSON.parse(fs.readFileSync('release-public-policy.json', 'utf8'))
 
 test('GPL rebuild pins mpv and emits matched binary and corresponding-source archives', () => {
   assert.match(workflow, /MPV_COMMIT: 41f6a645068483470267271e1d09966ca3b9f413/)
+  assert.match(workflow, /vswhere\.exe/)
+  assert.doesNotMatch(workflow, /Visual Studio\\2022\\Enterprise/)
   assert.match(workflow, /package-mpv-corresponding-source\.ps1/)
   assert.match(workflow, /mpv-v0\.41\.0-windows-x64-gpl-complete/)
   assert.match(packager, /build-fetched-git/)
