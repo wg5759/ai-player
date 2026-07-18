@@ -56,6 +56,15 @@ test('both Windows installers repair the per-user Open with command without taki
   assert.doesNotMatch(installer, /Software\\Classes\\\.mp4/)
 })
 
+test('AgentHub branding preserves the 0.6.x internal app identity and existing user data', () => {
+  const packageConfig = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'))
+  const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8')
+  assert.equal(packageConfig.name, 'ai-player')
+  assert.equal(packageConfig.build.appId, 'com.aiplayer.app')
+  assert.equal(packageConfig.build.productName, 'AI播放器')
+  assert.match(readme, /AgentHub AI Player/)
+})
+
 test('service worker registration is web-only and cannot fail in packaged Electron', () => {
   const vite = fs.readFileSync(path.join(__dirname, '..', 'vite.config.ts'), 'utf8')
   const entry = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.tsx'), 'utf8')
