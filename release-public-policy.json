@@ -5,9 +5,15 @@
     "reason": "项目自有源码可按 Apache-2.0 发布；忽略的模型和原生二进制不进入 Git。"
   },
   "binaryRelease": {
-    "allowed": false,
-    "reason": "mpv/FFmpeg 官方 GPL 构建的完整对应源码包尚未托管并写入固定 URL、大小和 SHA-256。",
+    "allowed": true,
+    "reason": "mpv/FFmpeg GPL 二进制、完整对应源码和绑定清单已在公开稳定 Release 托管；发布门禁必须在线核对远端资产大小与 SHA-256。",
     "requiredEvidence": [
+      "manifestUrl",
+      "manifestBytes",
+      "manifestSha256",
+      "binaryArchiveUrl",
+      "binaryArchiveBytes",
+      "binaryArchiveSha256",
       "correspondingSourceUrl",
       "correspondingSourceBytes",
       "correspondingSourceSha256"

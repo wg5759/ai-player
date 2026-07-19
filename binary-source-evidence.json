@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "releaseTag": "mpv-gpl-v0.41.0-20260719",
+  "manifestUrl": "https://github.com/wg5759/AgentPlay/releases/download/mpv-gpl-v0.41.0-20260719/GPL-BUNDLE-MANIFEST.json",
+  "manifestBytes": 533,
+  "manifestSha256": "F79133FD43D1853CA010AAF93394AC3150D790EBF8420795476ABD1AB07236D1",
+  "binaryArchiveUrl": "https://github.com/wg5759/AgentPlay/releases/download/mpv-gpl-v0.41.0-20260719/mpv-v0.41.0-windows-x64-gpl.zip",
+  "binaryArchiveBytes": 72559462,
+  "binaryArchiveSha256": "162DECE1C36816F8F72791CCCAC9052DDE596C765557996AAF3D8580AEAF9893",
+  "correspondingSourceUrl": "https://github.com/wg5759/AgentPlay/releases/download/mpv-gpl-v0.41.0-20260719/mpv-v0.41.0-complete-corresponding-source.zip",
+  "correspondingSourceBytes": 437132637,
+  "correspondingSourceSha256": "162FF8ECA2B321739DCD4D846D3B7F3BEE737D6F71F98FE409419867A2536C1E"
+}

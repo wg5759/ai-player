@@ -63,7 +63,7 @@ pnpm security:scan
 pnpm release:public:verify
 ```
 
-当前策略只允许发布源码；`pnpm release:public:verify:binary` 会在 GPL 对应源码包尚未托管时故障关闭。GitHub Actions 只做源码质量门禁，不再把 CI 配置存在冒充 macOS/Linux 已交付，也不会因推送标签自动发布安装包。
+源码仓库已经公开。mpv/FFmpeg GPL 二进制、完整对应源码和绑定清单已在 [稳定公开 Release](https://github.com/wg5759/AgentPlay/releases/tag/mpv-gpl-v0.41.0-20260719) 托管；`pnpm release:public:verify:binary` 会在线核对三个远端资产的固定 URL、字节数和 SHA-256，任一不一致即故障关闭。GitHub Actions 只做源码质量门禁，不把 CI 配置存在冒充 macOS/Linux 已交付，也不会因推送标签自动发布安装包。
 
 ## 开源边界
 

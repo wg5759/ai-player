@@ -3,7 +3,8 @@
 - Upstream project: <https://github.com/mpv-player/mpv>
 - Release: `v0.41.0`
 - Source commit: `41f6a645068483470267271e1d09966ca3b9f413`
-- Reproducible build run: <https://github.com/wg5759/ai-player/actions/runs/29651413999>
+- Reproducible build run: <https://github.com/wg5759/AgentPlay/actions/runs/29651413999>
+- Stable public compliance release: <https://github.com/wg5759/AgentPlay/releases/tag/mpv-gpl-v0.41.0-20260719>
 - Workflow artifact: `mpv-v0.41.0-windows-x64-gpl-complete`
 - Binary archive: `mpv-v0.41.0-windows-x64-gpl.zip`
 - Binary archive SHA-256: `162DECE1C36816F8F72791CCCAC9052DDE596C765557996AAF3D8580AEAF9893`
@@ -23,4 +24,4 @@ The local packaging inputs were compared byte-for-byte by SHA-256 against the ve
 | `mpv.pdb` | `41368B73560A8EAC2FB97EFFD477BE312581F5C55B0F05F3798F11A3BE5A123D` |
 | `vulkan-1.dll` | `9CD597DCA1119ABC535A86BBD42E8BA681D98F00ECB35E616D5691D7AAE23A42` |
 
-Before publishing an installer, attach or host both archives from the same manifest and keep the complete corresponding source available under the applicable GPL terms. A private or expiring Actions artifact is build evidence, not a stable public download location.
+Both archives and their binding manifest are publicly hosted in the stable compliance release above. `binary-source-evidence.json` records their fixed URLs, byte sizes and SHA-256 digests; the binary publication gate queries the public GitHub Release API and fails closed if any remote asset changes or disappears.
