@@ -466,6 +466,15 @@ app.whenReady().then(async () => {
     contextMenu.popup({ window: mainWindow })
   })
   ipcMain.handle('window:setPreset', (_e, preset, mediaSize) => setWindowPreset(preset, mediaSize))
+  ipcMain.handle('window:setPlaybackChromeVisible', (_e, visible) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false
+    if (process.platform !== 'darwin') mainWindow.setMenuBarVisibility(Boolean(visible))
+    return true
+  })
+  ipcMain.handle('window:isPlaybackChromeVisible', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false
+    return process.platform === 'darwin' ? true : mainWindow.isMenuBarVisible()
+  })
   ipcMain.handle('screenshot:save', async (_e, dataUrl, suggestedName) => {
     try {
       const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''))

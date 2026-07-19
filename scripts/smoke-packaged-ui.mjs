@@ -74,6 +74,8 @@ try {
     websocket.addEventListener('error', reject, { once: true })
   })
   await command('Runtime.enable')
+  await command('Page.bringToFront')
+  await command('Emulation.setFocusEmulationEnabled', { enabled: true })
   for (let attempt = 0; attempt < 80; attempt++) {
     const ready = await evaluate(`(() => {
       const video = document.querySelector('video[data-ai-player-video="true"]')
@@ -94,6 +96,60 @@ try {
       error: video.error?.message || null
     } : { present: false }
   })()`)
+  await evaluate(`(async () => {
+    const video = document.querySelector('video[data-ai-player-video="true"]')
+    video.currentTime = 0
+    const toggle = document.querySelector('button[title^="播放"], button[title^="暂停"]')
+    if (toggle?.title.startsWith('播放')) {
+      window.dispatchEvent(new CustomEvent('ai-player-action', { detail: 'play-toggle' }))
+      await new Promise((resolve) => requestAnimationFrame(() => resolve()))
+    }
+    await video.play()
+    return true
+  })()`, true)
+  await delay(3500)
+  const idleChromeHidden = await evaluate(`(() => {
+    const chrome = [...document.querySelectorAll('[data-player-chrome="true"]')]
+    return chrome.length >= 3 && chrome.every((element) => {
+      const style = getComputedStyle(element)
+      return style.opacity === '0' && style.pointerEvents === 'none'
+    })
+  })()`)
+  const idleMenuHidden = !(await evaluate('window.aiPlayer.windowControls.isPlaybackChromeVisible()', true))
+  await evaluate(`(() => {
+    const root = document.querySelector('video[data-ai-player-video="true"]')?.parentElement
+    root?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 400, clientY: 300 }))
+    return true
+  })()`)
+  await delay(600)
+  const activityChromeState = await evaluate(`(() => {
+    const chrome = [...document.querySelectorAll('[data-player-chrome="true"]')]
+    const elements = chrome.map((element) => ({
+      tag: element.tagName,
+      text: element.textContent?.trim().slice(0, 24) || '',
+      opacity: Number(getComputedStyle(element).opacity),
+      pointerEvents: getComputedStyle(element).pointerEvents,
+      className: element.className
+    }))
+    return { elements, visible: chrome.length >= 3 && chrome.every((element) => element.classList.contains('opacity-100') && !element.classList.contains('pointer-events-none')) }
+  })()`)
+  const activityChromeVisible = activityChromeState.visible
+  const activityMenuVisible = await evaluate('window.aiPlayer.windowControls.isPlaybackChromeVisible()', true)
+  await evaluate("window.dispatchEvent(new CustomEvent('ai-player-action', { detail: 'play-toggle' })); true")
+  await delay(3500)
+  const pausedChromeState = await evaluate(`(() => {
+    const chrome = [...document.querySelectorAll('[data-player-chrome="true"]')]
+    const elements = chrome.map((element) => ({
+      tag: element.tagName,
+      text: element.textContent?.trim().slice(0, 24) || '',
+      opacity: Number(getComputedStyle(element).opacity),
+      pointerEvents: getComputedStyle(element).pointerEvents,
+      className: element.className
+    }))
+    return { elements, visible: chrome.length >= 3 && chrome.every((element) => element.classList.contains('opacity-100') && !element.classList.contains('pointer-events-none')) }
+  })()`)
+  const pausedChromeVisible = pausedChromeState.visible
+  const pausedMenuVisible = await evaluate('window.aiPlayer.windowControls.isPlaybackChromeVisible()', true)
   await evaluate("window.dispatchEvent(new CustomEvent('ai-player-action', { detail: 'analysis-studio' })); true")
   await delay(500)
   const body = await evaluate('document.body.innerText')
@@ -102,13 +158,21 @@ try {
     version,
     videoLoaded: Boolean(playback.present && playback.readyState >= 1 && playback.videoWidth > 0 && playback.videoHeight > 0 && !playback.error),
     playback,
+    idleChromeHidden,
+    idleMenuHidden,
+    activityChromeVisible,
+    activityChromeState,
+    activityMenuVisible,
+    pausedChromeVisible,
+    pausedChromeState,
+    pausedMenuVisible,
     studioVisible: body.includes('AI 拉片与原创工作台'),
     creativeTabVisible: body.includes('4 AI 成片'),
     advancedRender: capabilities?.advancedRender,
     systemVoice: capabilities?.systemVoice,
     renderBinary: capabilities?.renderBinary
   }
-  if (version !== expectedVersion || !Object.values({ videoLoaded: result.videoLoaded, studioVisible: result.studioVisible, creativeTabVisible: result.creativeTabVisible, advancedRender: result.advancedRender, systemVoice: result.systemVoice }).every(Boolean)) {
+  if (version !== expectedVersion || !Object.values({ videoLoaded: result.videoLoaded, idleChromeHidden, idleMenuHidden, activityChromeVisible, activityMenuVisible, pausedChromeVisible, pausedMenuVisible, studioVisible: result.studioVisible, creativeTabVisible: result.creativeTabVisible, advancedRender: result.advancedRender, systemVoice: result.systemVoice }).every(Boolean)) {
     throw new Error(`正式 EXE 验收失败：${JSON.stringify(result)}`)
   }
   process.stdout.write(`${JSON.stringify(result)}\n`)

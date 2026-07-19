@@ -1,7 +1,12 @@
 import { usePlayerStore } from '../stores/playerStore'
 import { useAgentStore } from '../stores/agentStore'
 
-export default function PlayerControls() {
+interface Props {
+  onInteractionStart?: () => void
+  onInteractionEnd?: () => void
+}
+
+export default function PlayerControls({ onInteractionStart, onInteractionEnd }: Props) {
   const {
     isPlaying, togglePlay,
     volume, setVolume,
@@ -20,6 +25,11 @@ export default function PlayerControls() {
 
   return (
     <div
+      data-player-chrome="true"
+      onPointerEnter={onInteractionStart}
+      onPointerLeave={onInteractionEnd}
+      onFocusCapture={onInteractionStart}
+      onBlurCapture={onInteractionEnd}
       className={`absolute z-30 bottom-0 left-0 right-0 px-6 py-3 bg-gradient-to-t from-black/90 to-transparent transition-opacity duration-300 ${
         controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}

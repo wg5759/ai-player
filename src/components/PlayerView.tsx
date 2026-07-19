@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import PlayerControls from './PlayerControls'
 import { usePlayerStore } from '../stores/playerStore'
 import { useAgentStore } from '../stores/agentStore'
-import { shouldAutoHideControls } from '../player-ui-policy.mjs'
+import { PLAYER_CHROME_HIDE_DELAY_MS, shouldAutoHideControls } from '../player-ui-policy.mjs'
 
 interface Props {
   onBack: () => void
@@ -234,13 +234,39 @@ export default function PlayerView({ onBack }: Props) {
     return () => { active = false }
   }, [isDesktop, isMedia, mediaName])
 
-  const handleMouseMove = () => {
-    setControlsVisible(true)
+  const clearHideTimer = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current)
-    if (shouldAutoHideControls({ fullscreen: usePlayerStore.getState().isFullscreen, playing: isPlaying })) {
-      hideTimer.current = setTimeout(() => setControlsVisible(false), 3000)
+    hideTimer.current = null
+  }, [])
+
+  const holdControlsVisible = useCallback(() => {
+    setControlsVisible(true)
+    clearHideTimer()
+  }, [clearHideTimer, setControlsVisible])
+
+  const handleUserActivity = useCallback(() => {
+    holdControlsVisible()
+    if (shouldAutoHideControls({ hasMedia: isMedia, playing: isPlaying, blocked: subtitlePanelOpen || agentOpen })) {
+      hideTimer.current = setTimeout(() => {
+        const active = document.activeElement
+        const isUsingChrome = active instanceof HTMLElement && Boolean(active.closest('[data-player-chrome="true"]'))
+        if (!isUsingChrome && !useAgentStore.getState().open) setControlsVisible(false)
+      }, PLAYER_CHROME_HIDE_DELAY_MS)
     }
-  }
+  }, [agentOpen, holdControlsVisible, isMedia, isPlaying, setControlsVisible, subtitlePanelOpen])
+
+  useEffect(() => {
+    handleUserActivity()
+    return clearHideTimer
+  }, [clearHideTimer, handleUserActivity])
+
+  useEffect(() => {
+    void window.aiPlayer?.windowControls?.setPlaybackChromeVisible(controlsVisible || !isMedia)
+  }, [controlsVisible, isMedia])
+
+  useEffect(() => () => {
+    void window.aiPlayer?.windowControls?.setPlaybackChromeVisible(true)
+  }, [])
 
   const takeScreenshot = async () => {
     const fileBase = (mediaName || '视频').replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_')
@@ -456,13 +482,13 @@ export default function PlayerView({ onBack }: Props) {
     }
   }, [])
 
-  useEffect(() => () => { if (hideTimer.current) clearTimeout(hideTimer.current) }, [])
-
   return (
     <div
       ref={playerRootRef}
-      className="flex-1 min-h-0 relative overflow-hidden bg-black flex items-center justify-center"
-      onMouseMove={handleMouseMove}
+      className={`flex-1 min-h-0 relative overflow-hidden bg-black flex items-center justify-center ${isMedia && !controlsVisible ? 'cursor-none' : ''}`}
+      onMouseMove={handleUserActivity}
+      onPointerDown={handleUserActivity}
+      onKeyDownCapture={handleUserActivity}
       onDrop={handleDrop}
       onDragOver={(e) => e.preventDefault()}
       onContextMenu={(e) => {
@@ -598,6 +624,9 @@ export default function PlayerView({ onBack }: Props) {
 
       <button
         onClick={onBack}
+        data-player-chrome="true"
+        onPointerEnter={holdControlsVisible}
+        onPointerLeave={handleUserActivity}
         className={`absolute top-4 left-4 px-3 py-1 bg-player-surface/80 rounded text-sm hover:bg-player-surface transition-opacity duration-300 ${
           controlsVisible || !isMedia ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
@@ -608,7 +637,12 @@ export default function PlayerView({ onBack }: Props) {
       {isMedia && isDesktop && (
         <button
           onClick={searchOnlineSubtitle}
-          className="absolute top-4 right-4 px-3 py-1 bg-player-surface/80 rounded text-sm hover:bg-player-surface"
+          data-player-chrome="true"
+          onPointerEnter={holdControlsVisible}
+          onPointerLeave={handleUserActivity}
+          className={`absolute top-4 right-4 px-3 py-1 bg-player-surface/80 rounded text-sm hover:bg-player-surface transition-opacity duration-300 ${
+            controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
         >
           在线字幕
         </button>
@@ -635,7 +669,7 @@ export default function PlayerView({ onBack }: Props) {
         </div>
       )}
 
-      {isMedia && <PlayerControls />}
+      {isMedia && <PlayerControls onInteractionStart={holdControlsVisible} onInteractionEnd={handleUserActivity} />}
     </div>
   )
 }

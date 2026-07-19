@@ -9,7 +9,7 @@ fs.rmSync(distDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 10
 
 function currentBuildArtifactsReady() {
   const dist = distDir
-  const required = ['index.html', 'manifest.webmanifest', 'registerSW.js'].map((name) => path.join(dist, name))
+  const required = ['index.html', 'manifest.webmanifest', 'sw.js'].map((name) => path.join(dist, name))
   if (!required.every((file) => fs.existsSync(file) && fs.statSync(file).size > 0)) return false
   const assetsDir = path.join(dist, 'assets')
   if (!fs.existsSync(assetsDir)) return false

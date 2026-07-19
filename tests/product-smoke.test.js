@@ -17,13 +17,23 @@ const { ModelConfigStore } = require('../electron/model-config-store')
 const { extractExternalMediaPaths } = require('../electron/external-media-open')
 const { buildMpvEdl, buildOfflineAnalysis, parseSubtitleCues } = require('../electron/analysis-studio-service')
 
-test('windowed playback controls stay visible and auto-hide is fullscreen-only', async () => {
+test('playing media auto-hides chrome after idle while paused or blocked UI stays visible', async () => {
   const policyPath = path.join(__dirname, '..', 'src', 'player-ui-policy.mjs')
   assert.equal(fs.existsSync(policyPath), true, 'missing player UI visibility policy')
-  const { shouldAutoHideControls } = await import(`file:///${policyPath.replace(/\\/g, '/')}`)
-  assert.equal(shouldAutoHideControls({ fullscreen: false, playing: true }), false)
-  assert.equal(shouldAutoHideControls({ fullscreen: true, playing: false }), false)
-  assert.equal(shouldAutoHideControls({ fullscreen: true, playing: true }), true)
+  const { PLAYER_CHROME_HIDE_DELAY_MS, shouldAutoHideControls } = await import(`file:///${policyPath.replace(/\\/g, '/')}`)
+  assert.equal(PLAYER_CHROME_HIDE_DELAY_MS, 3000)
+  assert.equal(shouldAutoHideControls({ hasMedia: true, playing: true }), true)
+  assert.equal(shouldAutoHideControls({ hasMedia: true, playing: false }), false)
+  assert.equal(shouldAutoHideControls({ hasMedia: false, playing: true }), false)
+  assert.equal(shouldAutoHideControls({ hasMedia: true, playing: true, blocked: true }), false)
+  const playerView = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'PlayerView.tsx'), 'utf8')
+  const controls = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'PlayerControls.tsx'), 'utf8')
+  const main = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8')
+  assert.match(playerView, /setPlaybackChromeVisible\(controlsVisible \|\| !isMedia\)/)
+  assert.match(playerView, /onClick={searchOnlineSubtitle}[\s\S]{0,500}controlsVisible \? 'opacity-100'/)
+  assert.match(controls, /data-player-chrome="true"/)
+  assert.match(main, /window:setPlaybackChromeVisible[\s\S]{0,220}setMenuBarVisibility/)
+  assert.match(main, /window:isPlaybackChromeVisible[\s\S]{0,180}isMenuBarVisible/)
 })
 
 test('player right-click is a real context menu, not an open-file shortcut', () => {
@@ -56,22 +66,26 @@ test('both Windows installers repair the per-user Open with command without taki
   assert.doesNotMatch(installer, /Software\\Classes\\\.mp4/)
 })
 
-test('AgentHub branding preserves the 0.6.x internal app identity and existing user data', () => {
+test('AgentPlay branding preserves the 0.6.x internal app identity and existing user data', () => {
   const packageConfig = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'))
   const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8')
   assert.equal(packageConfig.name, 'ai-player')
   assert.equal(packageConfig.build.appId, 'com.aiplayer.app')
   assert.equal(packageConfig.build.productName, 'AI播放器')
-  assert.match(readme, /AgentHub AI Player/)
+  assert.match(readme, /AgentPlay/)
+  assert.doesNotMatch(readme, /AgentHub/)
 })
 
 test('service worker registration is web-only and cannot fail in packaged Electron', () => {
   const vite = fs.readFileSync(path.join(__dirname, '..', 'vite.config.ts'), 'utf8')
   const entry = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.tsx'), 'utf8')
+  const buildWeb = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'build-web.mjs'), 'utf8')
   assert.match(vite, /injectRegister:\s*null/)
   assert.match(entry, /location\.protocol === 'http:'[\s\S]*location\.protocol === 'https:'/)
   assert.match(entry, /navigator\.serviceWorker\.register/)
   assert.doesNotMatch(entry, /virtual:pwa-register/)
+  assert.match(buildWeb, /'sw\.js'/)
+  assert.doesNotMatch(buildWeb, /'registerSW\.js'/)
 })
 
 test('Explorer Open with accepts supported files with spaces and Chinese characters only', () => {
@@ -95,12 +109,15 @@ test('packaged UI smoke requires decoded video metadata, not merely a video elem
   assert.match(smoke, /videoWidth\s*>\s*0/)
   assert.match(smoke, /videoHeight\s*>\s*0/)
   assert.match(smoke, /video\.error/)
+  assert.match(smoke, /idleChromeHidden/)
+  assert.match(smoke, /activityChromeVisible/)
+  assert.match(smoke, /pausedChromeVisible/)
 })
 
 test('player flex layout cannot push the control buttons below the viewport', () => {
   const playerView = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'PlayerView.tsx'), 'utf8')
   const controls = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'PlayerControls.tsx'), 'utf8')
-  assert.match(playerView, /className="[^"]*min-h-0[^"]*overflow-hidden[^"]*"/)
+  assert.match(playerView, /className=\{`[^`]*min-h-0[^`]*overflow-hidden/)
   assert.match(controls, /className={`[^`]*z-30/)
 })
 

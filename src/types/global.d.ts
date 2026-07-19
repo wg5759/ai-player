@@ -1,5 +1,6 @@
 declare module '*.mjs' {
-  export function shouldAutoHideControls(input: { fullscreen: boolean; playing: boolean }): boolean
+  export const PLAYER_CHROME_HIDE_DELAY_MS: number
+  export function shouldAutoHideControls(input: { hasMedia?: boolean; playing: boolean; blocked?: boolean }): boolean
 }
 
 // 桌面端 Electron 注入的全局 API 类型声明
@@ -143,6 +144,8 @@ interface AiPlayerAPI {
   }
   windowControls?: {
     setPreset: (preset: 'original' | 'half' | 'fill' | 'fullscreen', mediaSize?: { width: number; height: number }) => Promise<boolean>
+    setPlaybackChromeVisible: (visible: boolean) => Promise<boolean>
+    isPlaybackChromeVisible: () => Promise<boolean>
     onFullscreenChanged: (cb: (fullscreen: boolean) => void) => () => void
   }
   screenshot?: {
