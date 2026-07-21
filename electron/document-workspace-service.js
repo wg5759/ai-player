@@ -75,6 +75,17 @@ function classifyTask(files, instruction, preferredOutput = 'auto') {
   if (files.length > 0 && pureConversion && readable) {
     return { kind: 'convert', outputFormat, requiresAi: false, summary: `转换为 ${outputFormat.toUpperCase()}` }
   }
+  const bundleSet = new Set()
+  if (/word|docx|报告/i.test(text)) bundleSet.add('docx')
+  if (/excel|xlsx|分析表|工作簿|电子表格/i.test(text)) bundleSet.add('xlsx')
+  if (/ppt|演示|汇报|幻灯片/i.test(text)) bundleSet.add('pptx')
+  if (/pdf/i.test(text)) bundleSet.add('pdf')
+  if (/markdown|\.md/i.test(text)) bundleSet.add('md')
+  if (/txt|纯文本|文本文件/i.test(text)) bundleSet.add('txt')
+  const hasBundleConnector = /和|与|以及|并且|\+|、|，|,|再加|还要|同时|一套|成套|全家桶|打包|分别|全套/.test(text)
+  if (bundleSet.size >= 2 && hasBundleConnector) {
+    return { kind: 'ai-bundle', outputFormat: 'bundle', requiresAi: true, summary: `一次生成 ${[...bundleSet].map((format) => format.toUpperCase()).join('、')} 成套成果`, bundleFormats: [...bundleSet] }
+  }
   return { kind: 'ai-generate', outputFormat, requiresAi: true, summary: files.length ? '根据文件和要求生成新成果' : '根据要求创建新成果' }
 }
 
@@ -471,6 +482,41 @@ function normalizeAiPlan(plan, fallbackFormat) {
   }
 }
 
+function normalizeBundlePlan(raw, formats) {
+  const bundle = {
+    title: cleanFileName(raw?.title || 'AgentPlay成套文档'),
+    summary: String(raw?.summary || '已生成成套成果'),
+    sections: {}
+  }
+  for (const format of Array.isArray(formats) ? formats : []) {
+    const section = raw?.[format]
+    if (!section) continue
+    if (format === 'docx' || format === 'pdf') {
+      bundle.sections[format] = {
+        title: cleanFileName(section.title || raw.title || 'AgentPlay文档'),
+        content: String(section.content || '')
+      }
+    } else if (format === 'xlsx') {
+      const sheets = (Array.isArray(section.sheets) ? section.sheets : []).map((sheet) => ({
+        name: String(sheet?.name || '结果'),
+        rows: Array.isArray(sheet?.rows) ? sheet.rows.slice(0, 5000).map((row) => (Array.isArray(row) ? row.slice(0, 100) : [row])) : []
+      })).slice(0, 20)
+      bundle.sections.xlsx = { sheets }
+    } else if (format === 'pptx') {
+      const slides = (Array.isArray(section.slides) ? section.slides : []).map((slide) => ({
+        title: String(slide?.title || ''),
+        bullets: Array.isArray(slide?.bullets) ? slide.bullets.map(String) : [],
+        notes: String(slide?.notes || '')
+      })).slice(0, 40)
+      bundle.sections.pptx = { title: String(section.title || raw?.title || ''), slides, content: String(section.content || '') }
+    } else if (format === 'md' || format === 'txt') {
+      bundle.sections[format] = { content: String(typeof section === 'string' ? section : section.content || '') }
+    }
+  }
+  if (Object.keys(bundle.sections).length === 0) throw new Error('模型没有给出任何可用的成套内容')
+  return bundle
+}
+
 function columnNumber(value) {
   const letters = String(value || '').toUpperCase()
   if (!/^[A-Z]{1,3}$/.test(letters)) return null
@@ -719,6 +765,28 @@ class DocumentWorkspaceService {
     return normalizeAiPlan(parseJsonObject(response.text), plan.outputFormat)
   }
 
+  async buildBundlePlan(plan, options = {}) {
+    const sourceChunks = []
+    for (const file of plan.files) {
+      sourceChunks.push(`\n===== ${file.name} =====\n${await extractText(file.path, this.ocr)}`)
+    }
+    const wanted = plan.bundleFormats.join('、')
+    const prompt = [
+      `用户要求：${plan.instruction}`,
+      `需要产出：${wanted}（只给这些格式各生成一份内容，不要多余格式）`,
+      sourceChunks.join('\n').slice(0, MAX_PROMPT_CHARS),
+      '只返回一个 JSON 对象，不要使用 Markdown 代码块。结构：',
+      '{"title":"总标题","summary":"完成说明","docx":{"title":"报告标题","content":"完整正文，使用#标题和-列表"},"xlsx":{"sheets":[{"name":"工作表名","rows":[["表头"],["数据"]]}]},"pptx":{"slides":[{"title":"页标题","bullets":["要点"],"notes":"备注"}]},"pdf":{"title":"交付文档标题","content":"完整正文"},"md":{"content":"Markdown 正文"},"txt":{"content":"纯文本正文"}}',
+      '按需要产出的格式给对应键；事实必须来自源文件；资料不足时明确标注，不得编造；PPT每页最多8个要点；Excel公式必须以=开头。'
+    ].join('\n')
+    const response = await this.complete({
+      systemPrompt: '你是 AgentPlay 成套文档规划器。你只生成严格、可执行、符合指定 JSON 结构的内容。',
+      prompt,
+      signal: options.signal
+    })
+    return normalizeBundlePlan(parseJsonObject(response.text), plan.bundleFormats)
+  }
+
   async buildFormulaPlan(plan, options = {}) {
     const sourceText = await extractText(plan.files[0].path, this.ocr)
     const response = await this.complete({
@@ -752,6 +820,25 @@ class DocumentWorkspaceService {
       await this.renderPdf(htmlForPdf(result.title, result.content), finalPath)
     } else commitBuffer(finalPath, Buffer.from(result.content || '', 'utf8'))
     return { outputs: [finalPath], summary: result.summary }
+  }
+
+  async writeBundle(plan, bundle) {
+    const outputDir = plan.files[0] ? path.dirname(plan.files[0].path) : this.outputRoot
+    const baseName = cleanFileName(path.parse(plan.files[0]?.name || bundle.title).name)
+    const labels = { docx: '报告', xlsx: '分析', pptx: '汇报', pdf: '交付', md: '文档', txt: '文本' }
+    const outputs = []
+    for (const [format, section] of Object.entries(bundle.sections)) {
+      const finalPath = uniqueOutputPath(outputDir, `${baseName}-AgentPlay处理版-${labels[format] || format}`, format)
+      if (format === 'docx') await writeDocx(finalPath, section.title, section.content)
+      else if (format === 'xlsx') await writeWorkbook(finalPath, section.sheets)
+      else if (format === 'pptx') await writePresentation(finalPath, section.title || bundle.title, section.slides.length ? section.slides : slidesFromText(section.title || bundle.title, section.content))
+      else if (format === 'pdf') {
+        if (!this.renderPdf) throw new Error('当前平台没有可用的 PDF 渲染器')
+        await this.renderPdf(htmlForPdf(section.title, section.content), finalPath)
+      } else commitBuffer(finalPath, Buffer.from(section.content || '', 'utf8'))
+      outputs.push(finalPath)
+    }
+    return { outputs, summary: `${bundle.summary}（共 ${outputs.length} 个文件）` }
   }
 
   recordHistory(plan, result) {
@@ -798,6 +885,9 @@ class DocumentWorkspaceService {
       const finalPath = uniqueOutputPath(outputDir, `${path.parse(plan.files[0].name).name}-AgentPlay处理版`, 'xlsx')
       await editSpreadsheet(plan.files[0].path, finalPath, '')
       result = { outputs: [finalPath], summary: '表格已转换并另存为新的 XLSX 文件' }
+    } else if (plan.kind === 'ai-bundle') {
+      const bundle = await this.buildBundlePlan(plan, options)
+      result = await this.writeBundle(plan, bundle)
     } else {
       result = await this.writeGenerated(plan, plan.requiresAi ? await this.buildAiPlan(plan, options) : null)
     }
@@ -813,6 +903,7 @@ module.exports = {
   extractText,
   htmlForPdf,
   normalizeAiPlan,
+  normalizeBundlePlan,
   parseExplicitFormula,
   pdfPageCount,
   validateFormula
