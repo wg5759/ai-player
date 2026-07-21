@@ -204,3 +204,32 @@ test('ODF, RTF and HTML documents extract readable text', async () => {
     fs.rmSync(tempDir, { recursive: true, force: true })
   }
 })
+
+test('"改成/变成" routes to local convert while language retargeting stays an AI task', async () => {
+  const doc = [{ path: '资料.doc' }]
+  assert.deepEqual(classifyTask(doc, '提取文字并改成pdf', 'auto'), {
+    kind: 'convert', outputFormat: 'pdf', requiresAi: false, summary: '转换为 PDF'
+  })
+  assert.equal(classifyTask(doc, '整理一下变成Word', 'auto').kind, 'convert')
+  assert.equal(classifyTask(doc, '把内容改成英文', 'auto').requiresAi, true)
+  assert.equal(classifyTask(doc, '提取文字并翻译成英文', 'auto').requiresAi, true)
+})
+
+test('rtf to pdf conversion runs fully local end to end', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentplay-convert-'))
+  try {
+    const service = workspace(tempDir)
+    const rtfPath = path.join(tempDir, '会议记录.rtf')
+    fs.writeFileSync(rtfPath, '{\\rtf1\\ansi 季度总结 \\par 第一条 \\par 第二条}')
+    const result = await service.run([rtfPath], '提取文字并改成pdf', 'auto')
+    assert.equal(result.success, true)
+    assert.equal(result.plan.kind, 'convert')
+    assert.equal(result.plan.requiresAi, false)
+    assert.ok(result.outputs[0].endsWith('-AgentPlay处理版.pdf'))
+    assert.ok(fs.existsSync(result.outputs[0]))
+    const history = fs.readFileSync(path.join(tempDir, 'history', 'history.jsonl'), 'utf8')
+    assert.match(history, /提取文字并改成pdf/)
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+})

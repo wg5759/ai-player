@@ -54,7 +54,8 @@ function classifyTask(files, instruction, preferredOutput = 'auto') {
     const requiresAi = /公式/.test(text) && !hasExplicitFormula
     return { kind: 'spreadsheet-edit', outputFormat: 'xlsx', requiresAi, summary: requiresAi ? '理解并写入表格公式' : '清理或修改表格' }
   }
-  const pureConversion = /转换|转成|转为|导出/.test(text) && !/改写|翻译|总结|提炼|补充|重组|生成|制作/.test(text)
+  const languageRetarget = /改成|变成/.test(text) && /英文|英语|中文|汉语|日语|日文|韩语|法语|德语|西班牙语|俄语/.test(text)
+  const pureConversion = !languageRetarget && /转换|转成|转为|导出|改成|变成/.test(text) && !/改写|翻译|总结|提炼|补充|重组|生成|制作/.test(text)
   const readable = files.every((file) => ['.txt', '.md', '.csv', '.json', '.srt', '.vtt', '.docx', '.doc', '.xlsx', '.pptx', '.pdf', '.odt', '.ods', '.odp', '.rtf', '.html', '.htm'].includes(path.extname(file.path).toLowerCase()))
   if (files.length > 0 && pureConversion && readable) {
     return { kind: 'convert', outputFormat, requiresAi: false, summary: `转换为 ${outputFormat.toUpperCase()}` }
