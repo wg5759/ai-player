@@ -96,7 +96,7 @@ function commitBuffer(finalPath, buffer) {
   fs.renameSync(tempPath, finalPath)
 }
 
-async function extractText(filePath) {
+async function extractText(filePath, ocr = null) {
   const ext = path.extname(filePath).toLowerCase()
   const stat = fs.statSync(filePath)
   if (!stat.isFile()) throw new Error('所选路径不是文件')
@@ -147,11 +147,21 @@ async function extractText(filePath) {
     }
     return chunks.join('\n\n').slice(0, MAX_PROMPT_CHARS)
   }
-  if (ext === '.pdf') return extractPdfText(filePath)
+  if (ext === '.pdf') return extractPdfText(filePath, ocr)
   throw new Error(`${ext || '该格式'} 暂不支持提取正文`)
 }
 
-async function extractPdfText(filePath) {
+async function pdfPageCount(filePath) {
+  const { getDocumentProxy } = require('unpdf')
+  const pdf = await getDocumentProxy(new Uint8Array(fs.readFileSync(filePath)))
+  try {
+    return pdf.numPages
+  } finally {
+    if (typeof pdf.destroy === 'function') void pdf.destroy()
+  }
+}
+
+async function extractPdfText(filePath, ocr = null) {
   // 懒加载 unpdf（内嵌 PDF.js）：只在真正处理 PDF 时才载入，避免拖慢应用启动。
   const { getDocumentProxy, extractText: extractPdfPages } = require('unpdf')
   const data = new Uint8Array(fs.readFileSync(filePath))
@@ -173,7 +183,15 @@ async function extractPdfText(filePath) {
       if (pageText) chunks.push(`## 第 ${index + 1} 页\n${pageText}`)
     }
     const joined = chunks.join('\n\n').trim()
-    if (!joined) throw new Error('这份 PDF 没有可提取的文字层（可能是扫描件或图片型 PDF）；扫描件 OCR 识别将在下一阶段提供')
+    if (!joined) {
+      if (ocr && typeof ocr.recognizePdf === 'function') {
+        const ocrText = await ocr.recognizePdf(filePath).catch(() => null)
+        if (ocrText && ocrText.trim()) {
+          return `${ocrText.trim()}\n\n（本 PDF 为扫描件，以上文字由系统 OCR 提取，可能有识别误差）`.slice(0, MAX_PROMPT_CHARS)
+        }
+      }
+      throw new Error('这份 PDF 没有可提取的文字层（扫描件或图片型 PDF）；当前系统 OCR 不可用或未识别出文字')
+    }
     const total = totalPages || pages.length
     const suffix = total > maxPages ? `\n\n（仅提取前 ${maxPages} 页，共 ${total} 页）` : ''
     return `${joined}${suffix}`.slice(0, MAX_PROMPT_CHARS)
@@ -635,11 +653,12 @@ async function splitPdf(filePath, outputDir, baseName) {
 }
 
 class DocumentWorkspaceService {
-  constructor({ outputRoot, historyRoot, complete, renderPdf }) {
+  constructor({ outputRoot, historyRoot, complete, renderPdf, ocr }) {
     this.outputRoot = outputRoot
     this.historyRoot = historyRoot
     this.complete = complete
     this.renderPdf = renderPdf
+    this.ocr = ocr || null
   }
 
   inspect(filePaths) {
@@ -677,7 +696,7 @@ class DocumentWorkspaceService {
   async buildAiPlan(plan, options = {}) {
     const sourceChunks = []
     for (const file of plan.files) {
-      sourceChunks.push(`\n===== ${file.name} =====\n${await extractText(file.path)}`)
+      sourceChunks.push(`\n===== ${file.name} =====\n${await extractText(file.path, this.ocr)}`)
     }
     const prompt = [
       `用户要求：${plan.instruction}`,
@@ -696,7 +715,7 @@ class DocumentWorkspaceService {
   }
 
   async buildFormulaPlan(plan, options = {}) {
-    const sourceText = await extractText(plan.files[0].path)
+    const sourceText = await extractText(plan.files[0].path, this.ocr)
     const response = await this.complete({
       systemPrompt: '你是 Excel 公式规划器，只返回 JSON。公式使用英文函数名和逗号分隔参数。',
       prompt: `用户要求：${plan.instruction}\n表格样例：\n${sourceText.slice(0, 12000)}\n只返回 {"column":"G","header":"毛利率","formula":"=(D{row}-E{row})/D{row}"}。column也可以是现有表头名。无法确定时不要猜测，返回 {"error":"具体缺少什么"}。`,
@@ -713,7 +732,7 @@ class DocumentWorkspaceService {
       title: cleanFileName(path.parse(plan.files[0]?.name || 'AgentPlay文档').name),
       summary: plan.summary,
       outputFormat: plan.outputFormat,
-      content: plan.files.length ? await extractText(plan.files[0].path) : plan.instruction,
+      content: plan.files.length ? await extractText(plan.files[0].path, this.ocr) : plan.instruction,
       slides: [], sheets: []
     }
     const outputDir = plan.files[0] ? path.dirname(plan.files[0].path) : this.outputRoot
@@ -785,5 +804,6 @@ module.exports = {
   htmlForPdf,
   normalizeAiPlan,
   parseExplicitFormula,
+  pdfPageCount,
   validateFormula
 }

@@ -4,6 +4,7 @@
 const { app, BrowserWindow, ipcMain, Menu, dialog, safeStorage } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const os = require('os')
 const crypto = require('crypto')
 const { spawn } = require('child_process')
 const { MpvService } = require('./mpv-service')
@@ -38,7 +39,9 @@ const {
   synthesizeCloudVoice,
   synthesizeSystemVoice
 } = require('./creative-studio-service')
-const { DocumentWorkspaceService, SUPPORTED_EXTENSIONS } = require('./document-workspace-service')
+const { DocumentWorkspaceService, SUPPORTED_EXTENSIONS, pdfPageCount } = require('./document-workspace-service')
+const { WinRtOcrService } = require('./ocr-service')
+const { rasterizePdfPages } = require('./pdf-rasterizer')
 const { LocalAiDownloadService } = require('./local-ai-download-service')
 const LOCAL_AI_PACK = require('./local-ai-pack-manifest')
 
@@ -327,6 +330,41 @@ async function renderHtmlToPdf(html, finalPath) {
   }
 }
 
+function createHiddenWindow({ width, height }) {
+  return new BrowserWindow({
+    show: false,
+    width,
+    height,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false }
+  })
+}
+
+const ocrService = new WinRtOcrService()
+
+async function recognizePdfWithOcr(filePath) {
+  const status = await ocrService.detect()
+  if (!status.available) return null
+  const pageCount = await pdfPageCount(filePath)
+  const images = await rasterizePdfPages({ pdfPath: filePath, pageCount, createWindow: createHiddenWindow })
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentplay-ocr-'))
+  try {
+    const imagePaths = images.map((buffer, index) => {
+      const imagePath = path.join(tempDir, `page-${index + 1}.png`)
+      fs.writeFileSync(imagePath, buffer)
+      return imagePath
+    })
+    const results = await ocrService.recognize(imagePaths)
+    const chunks = []
+    for (let index = 0; index < imagePaths.length; index += 1) {
+      const entry = results.get(imagePaths[index])
+      if (entry?.ok && entry.text) chunks.push(`## 第 ${index + 1} 页\n${entry.text}`)
+    }
+    return chunks.join('\n\n')
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
 function documentSelectionFromToken(token) {
   const record = approvedDocumentSelections.get(String(token || ''))
   if (!record || Date.now() - record.createdAt > 24 * 60 * 60 * 1000) {
@@ -464,6 +502,7 @@ app.whenReady().then(async () => {
     outputRoot: path.join(app.getPath('documents'), 'AgentPlay 输出'),
     historyRoot: path.join(app.getPath('userData'), 'document-workspace'),
     renderPdf: renderHtmlToPdf,
+    ocr: { recognizePdf: recognizePdfWithOcr },
     complete: async ({ systemPrompt, prompt, signal }) => {
       let config = modelConfigStore.resolved('chat')
       let usesBundledRuntime = false
