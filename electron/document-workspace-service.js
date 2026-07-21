@@ -9,6 +9,7 @@ const { Document, HeadingLevel, Packer, Paragraph, TextRun } = require('docx')
 const { PDFDocument } = require('pdf-lib')
 const { editDocx, parseEditInstruction } = require('./docx-editor')
 const { editPptx, parsePptxEditInstruction } = require('./pptx-editor')
+const { FormulaError, analyzeFormula, columnIndex, columnLetters, evaluateFormula } = require('./formula-engine')
 
 const SUPPORTED_EXTENSIONS = new Set([
   '.txt', '.md', '.csv', '.json', '.srt', '.vtt',
@@ -476,7 +477,7 @@ function parseDedupeColumn(instruction, sheet) {
 
 function parseExplicitFormula(instruction) {
   const target = String(instruction).match(/(?:在|填充到)?\s*([A-Z]{1,3})\s*列/i)
-  const formula = String(instruction).match(/(?:公式\s*[：:]?\s*)?(=\s*[A-Z][^\n，。；;]*)/i)
+  const formula = String(instruction).match(/(?:公式\s*[：:]?\s*)?(=\s*[(A-Za-z0-9][^\n，。；;]*)/i)
   if (!target || !formula) return null
   return { column: target[1].toUpperCase(), formula: formula[1].replace(/^=\s*/, '=') }
 }
@@ -484,6 +485,77 @@ function parseExplicitFormula(instruction) {
 function formulaForRow(formula, rowNumber) {
   if (formula.includes('{row}')) return formula.replace(/\{row\}/gi, String(rowNumber))
   return formula.replace(/(\$?[A-Z]{1,3}\$?)2\b/g, `$1${rowNumber}`)
+}
+
+function cellValueForRecalc(value) {
+  if (value === null || value === undefined) return 0
+  if (typeof value === 'number' || typeof value === 'boolean' || value instanceof Date) return value
+  if (typeof value === 'string') return value
+  if (typeof value === 'object') {
+    if ('result' in value && (typeof value.result === 'number' || typeof value.result === 'string' || typeof value.result === 'boolean' || value.result instanceof Date)) return value.result
+    if ('text' in value) return cellValueForRecalc(value.text)
+    if (Array.isArray(value.richText)) return value.richText.map((part) => part.text || '').join('')
+    if ('formula' in value) throw new FormulaError('#REF!', '引用了含公式的单元格，超出本地重算能力')
+    if ('error' in value) throw new FormulaError('#VALUE!', '引用单元格本身是错误值')
+  }
+  return String(value)
+}
+
+function assertNoCircularReference(formula, targetColumnLetter) {
+  let analysis
+  try {
+    analysis = analyzeFormula(formula)
+  } catch (error) {
+    if (error instanceof FormulaError) throw new Error(`公式无法解析：${error.message}`)
+    throw error
+  }
+  const targetIndex = columnIndex(targetColumnLetter)
+  for (const ref of analysis.cellRefs) {
+    if (ref.column === targetColumnLetter) throw new Error(`公式引用了目标列 ${targetColumnLetter} 自身，会形成循环引用`)
+  }
+  for (const span of analysis.rangeSpans) {
+    const from = columnIndex(span.from.column)
+    const to = columnIndex(span.to.column)
+    if (targetIndex >= Math.min(from, to) && targetIndex <= Math.max(from, to)) {
+      throw new Error(`公式区域 ${span.from.column}${span.from.row}:${span.to.column}${span.to.row} 覆盖目标列 ${targetColumnLetter}，会形成循环引用`)
+    }
+  }
+}
+
+function formatRecalcSample(value) {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return String(value)
+    return String(Number.isInteger(value) ? value : Number(value.toPrecision(4)))
+  }
+  return String(value)
+}
+
+function verifyWrittenFormulas(sheet, columnLetter, formulaTemplate, sampleRows = 50) {
+  const endRow = Math.min(sheet.rowCount, 1 + sampleRows)
+  const samples = []
+  const errors = []
+  let checked = 0
+  for (let rowNumber = 2; rowNumber <= endRow; rowNumber += 1) {
+    const formula = formulaForRow(String(formulaTemplate).replace(/^=/, ''), rowNumber)
+    try {
+      const value = evaluateFormula(formula, (ref) => cellValueForRecalc(sheet.getCell(ref.row, columnIndex(ref.column)).value))
+      checked += 1
+      if (samples.length < 3) samples.push({ row: rowNumber, value: formatRecalcSample(value) })
+    } catch (error) {
+      if (error instanceof FormulaError) {
+        if (error.code === '#NAME?' || error.code === '#REF!') return `已写入；${error.message}，请在 Excel 中打开后核对结果`
+        errors.push({ row: rowNumber, code: error.code })
+      } else {
+        errors.push({ row: rowNumber, code: '#ERROR' })
+      }
+    }
+  }
+  if (errors.length > 0) {
+    return `重算抽验发现 ${errors.length} 行计算错误（如第 ${errors[0].row} 行 ${errors[0].code}），请检查公式或源数据`
+  }
+  if (checked === 0) return '已写入；数据行不足，未执行重算抽验'
+  const sampleText = samples.map((sample) => `${columnLetter}${sample.row}=${sample.value}`).join('、')
+  return `重算抽验 ${checked} 行通过（${sampleText}${endRow < sheet.rowCount ? ' …' : ''}）`
 }
 
 async function editSpreadsheet(sourcePath, finalPath, instruction, formulaPlan = null) {
@@ -515,12 +587,15 @@ async function editSpreadsheet(sourcePath, finalPath, instruction, formulaPlan =
     if (spec?.column && spec?.formula) {
       const col = columnNumber(spec.column) || findHeaderColumn(sheet, spec.column)
       if (!col) throw new Error(`找不到公式目标列：${spec.column}`)
+      const colLetter = columnLetters(col)
+      assertNoCircularReference(formulaForRow(String(spec.formula).replace(/^=/, ''), 2), colLetter)
       if (spec.header) sheet.getCell(1, col).value = spec.header
       for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
         const formula = validateFormula(formulaForRow(String(spec.formula).replace(/^=/, ''), rowNumber))
         sheet.getCell(rowNumber, col).value = { formula }
       }
       operations.push(`${sheet.name}：向 ${spec.column} 列写入 ${Math.max(0, sheet.rowCount - 1)} 个公式`)
+      operations.push(verifyWrittenFormulas(sheet, colLetter, spec.formula))
     }
   }
   workbook.calcProperties.fullCalcOnLoad = true
