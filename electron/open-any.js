@@ -28,10 +28,10 @@ function splitOpenAnyPaths(filePaths, { inspectDocuments, isMediaPath, approveDo
 module.exports = { splitOpenAnyPaths }
 
 // 路径是否落在任一用户授权过的文件夹内（用于库内文件直接附带为文档任务来源）。
-// realpath 归一化后做前缀判断，防符号链接逃逸；两种斜杠都按分隔符处理。
+// 先统一斜杠再 resolve（“..”在所有平台都被正确折叠），最后再统一斜杠供前缀比较，防符号链接逃逸。
 function isPathInsideRoots(filePath, roots, { realpathSync } = {}) {
   const realpath = realpathSync || ((value) => value)
-  const normalizeForCompare = (value) => path.resolve(String(value)).replace(/\\/g, '/').toLowerCase()
+  const normalizeForCompare = (value) => path.resolve(String(value).replace(/\\/g, '/')).replace(/\\/g, '/').toLowerCase()
   let resolved
   try {
     resolved = realpath(filePath)
