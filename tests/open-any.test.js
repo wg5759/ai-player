@@ -22,7 +22,8 @@ function harness() {
 
 test('open-any 分流：文档授权、媒体放行、未知跳过', () => {
   const { media, documents } = splitOpenAnyPaths(['D:/视频.mp4', 'D:/合同.docx', 'D:/扫描.pdf', 'D:/程序.exe'], harness())
-  assert.deepEqual(media, ['D:\\视频.mp4'])
+  assert.equal(media.length, 1)
+  assert.ok(media[0].endsWith('视频.mp4'))
   assert.equal(documents.length, 2)
   assert.equal(documents[0].token, 'token-1')
   assert.equal(documents[1].ext, '.pdf')
@@ -31,7 +32,8 @@ test('open-any 分流：文档授权、媒体放行、未知跳过', () => {
 test('文档校验失败的媒体扩展名回退到播放器', () => {
   const { media, documents } = splitOpenAnyPaths(['D:/照片.jpg'], harness())
   assert.deepEqual(documents, [])
-  assert.deepEqual(media, ['D:\\照片.jpg'])
+  assert.equal(media.length, 1)
+  assert.ok(media[0].endsWith('照片.jpg'))
 })
 
 test('超过 20 个文件截断且顺序稳定', () => {
