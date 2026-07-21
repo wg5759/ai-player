@@ -42,6 +42,8 @@ export default function ModelCenter({ onClose }: Props) {
   const [busy, setBusy] = useState(false)
   const [discovered, setDiscovered] = useState<DiscoveredService[]>([])
   const [bundledStatus, setBundledStatus] = useState<BundledModelStatus | null>(null)
+  const [whisperStatus, setWhisperStatus] = useState<{ available: boolean; reason: string; download: Partial<LocalAiDownloadProgress> & { active: boolean }; pack: { totalBytes: number } } | null>(null)
+  const [whisperError, setWhisperError] = useState('')
   const [downloadProgress, setDownloadProgress] = useState<LocalAiDownloadProgress | null>(null)
   const [downloadActive, setDownloadActive] = useState(false)
   const [downloadError, setDownloadError] = useState('')
@@ -86,7 +88,11 @@ export default function ModelCenter({ onClose }: Props) {
         void window.aiPlayer?.models?.bundledStatus().then((next) => { if (active && next) setBundledStatus(next) })
       }
     })
-    return () => { active = false; offProgress?.() }
+    void window.aiPlayer?.transcribe?.status().then((status) => { if (active && status) setWhisperStatus(status) })
+    const offWhisper = window.aiPlayer?.transcribe?.onProgress?.(() => {
+      void window.aiPlayer?.transcribe?.status().then((status) => { if (active && status) setWhisperStatus(status) })
+    })
+    return () => { active = false; offProgress?.(); offWhisper?.() }
   }, [])
 
   const changeRole = async (nextRole: ModelRole) => {
@@ -190,6 +196,22 @@ export default function ModelCenter({ onClose }: Props) {
 
   const cancelLocalAiDownload = async () => {
     await window.aiPlayer?.localAI?.cancel()
+  }
+
+  const startWhisperDownload = async () => {
+    setWhisperError('')
+    try {
+      const result = await window.aiPlayer?.transcribe?.download()
+      if (!result?.success) throw new Error(result?.error || '下载失败')
+      const status = await window.aiPlayer?.transcribe?.status()
+      if (status) setWhisperStatus(status)
+    } catch (error) {
+      setWhisperError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const cancelWhisperDownload = async () => {
+    await window.aiPlayer?.transcribe?.cancelDownload()
   }
 
   const startBundled = async () => {
@@ -309,6 +331,27 @@ export default function ModelCenter({ onClose }: Props) {
                 ? <button disabled={busy} onClick={() => void stopBundled()} className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/15 disabled:opacity-40">停止并释放内存</button>
                 : <button disabled={busy || !bundledStatus.assetsPresent || !bundledStatus.hardware.eligible} onClick={() => void startBundled()} className="rounded-lg bg-emerald-600/80 px-4 py-2 text-sm hover:bg-emerald-600 disabled:opacity-40">启动内置模型</button>}
             </div>
+          </div>}
+
+          {role === 'chat' && whisperStatus && <div className="rounded-xl border border-violet-500/25 bg-violet-500/5 px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm text-violet-100">录音转写组件 · whisper.cpp + ggml-tiny</div>
+                <div className="mt-1 text-xs text-gray-500">约 {Math.round((whisperStatus.pack?.totalBytes || 0) / 1024 / 1024)}MB · 离线中文语音转文字，可出带时间轴字幕</div>
+                {!whisperStatus.available && !whisperStatus.download?.active && <div className="mt-2 text-xs text-amber-300">{whisperStatus.reason}；下载一次即可离线使用。</div>}
+                {whisperStatus.available && <div className="mt-2 text-xs text-emerald-300">已就绪：音频附件说“转写这段录音”，视频右键菜单可“生成双语字幕”。</div>}
+                {whisperError && <div className="mt-2 text-xs text-red-300">{whisperError}</div>}
+              </div>
+              {!whisperStatus.available && (whisperStatus.download?.active
+                ? <button onClick={() => void cancelWhisperDownload()} className="rounded-lg bg-white/10 px-4 py-2 text-sm hover:bg-white/15">取消下载</button>
+                : <button disabled={busy} onClick={() => void startWhisperDownload()} className="rounded-lg bg-violet-600/80 px-4 py-2 text-sm hover:bg-violet-600 disabled:opacity-40">下载转写组件</button>)}
+            </div>
+            {whisperStatus.download?.active && (
+              <div className="mt-3">
+                <div className="h-2 overflow-hidden rounded-full bg-black/40"><div className="h-full bg-violet-500 transition-all" style={{ width: `${Math.min(100, Math.round(((whisperStatus.download.receivedBytes || 0) / (whisperStatus.download.totalBytes || 1)) * 100))}%` }} /></div>
+                <div className="mt-1 text-xs text-gray-400">{whisperStatus.download.currentFile || '下载中'} · {((whisperStatus.download.receivedBytes || 0) / 1024 / 1024).toFixed(0)}/{((whisperStatus.download.totalBytes || 0) / 1024 / 1024).toFixed(0)}MB</div>
+              </div>
+            )}
           </div>}
 
           <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 px-4 py-4">

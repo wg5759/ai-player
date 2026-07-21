@@ -79,6 +79,7 @@ export default function PlayerView({ onBack }: Props) {
   const [playbackNotice, setPlaybackNotice] = useState('')
   const [subtitleResults, setSubtitleResults] = useState<Array<{ fileId: number; fileName: string; language: string; release: string }>>([])
   const [subtitleStatus, setSubtitleStatus] = useState('')
+  const [bilingualBusy, setBilingualBusy] = useState(false)
   const [subtitlePanelOpen, setSubtitlePanelOpen] = useState(false)
 
   const isDesktop = window.aiPlayer?.isElectron === true
@@ -324,6 +325,8 @@ export default function PlayerView({ onBack }: Props) {
       void window.aiPlayer?.player?.setPictureMode(mode)
       if (mode === 'fill') setPlaybackNotice('裁剪铺满会隐藏上下或左右边缘；选择“完整显示”可看到全部画面')
       else setPlaybackNotice('')
+    } else if (action === 'bilingual-subtitle') {
+      void generateBilingual()
     } else if (action.startsWith('window-')) {
       applyWindowPreset(action.slice(7) as 'original' | 'half' | 'fill' | 'fullscreen')
     }
@@ -352,8 +355,43 @@ export default function PlayerView({ onBack }: Props) {
     }
   })
 
-  const applySubtitle = async (subtitlePath: string, ext: string) => {
-    if (useMpv) {
+  const bilingualRequestId = useRef('')
+  useEffect(() => {
+    const off = window.aiPlayer?.subtitleBilingual?.onStatus((event) => {
+      if (event.requestId === bilingualRequestId.current) setSubtitleStatus(event.status)
+    })
+    return off
+  }, [])
+
+  const generateBilingual = async () => {
+    const api = window.aiPlayer?.subtitleBilingual
+    if (!api) return
+    if (!videoSrc || videoSrc.startsWith('blob:') || /^https?:/i.test(videoSrc)) {
+      setSubtitlePanelOpen(true)
+      setSubtitleStatus('双语字幕只支持本地文件；请先打开本地视频或音频。')
+      return
+    }
+    setBilingualBusy(true)
+    setSubtitlePanelOpen(true)
+    setSubtitleStatus('正在准备双语字幕…')
+    try {
+      const requestId = `bilingual-${Date.now()}`
+      bilingualRequestId.current = requestId
+      const result = await api.generate({ path: videoSrc, requestId })
+      if (!result.success) {
+        setSubtitleStatus(result.needDownload ? `${result.error}（模型接入中心可一键下载）` : result.error || '生成失败')
+        return
+      }
+      await applySubtitle(result.srtPath!, '.srt')
+      setSubtitleStatus(`双语字幕已生成（${result.count} 句${result.failed ? `，${result.failed} 句未译` : ''}）：${result.srtPath}`)
+    } catch (error) {
+      setSubtitleStatus(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBilingualBusy(false)
+    }
+  }
+
+  const applySubtitle = async (subtitlePath: string, ext: string) => {    if (useMpv) {
       const loaded = await window.aiPlayer?.player?.loadSubtitle(subtitlePath)
       if (!loaded) throw new Error('mpv 未能加载字幕')
     } else {
@@ -655,7 +693,7 @@ export default function PlayerView({ onBack }: Props) {
               <p className="text-sm">选择在线字幕</p>
               <button onClick={() => setSubtitlePanelOpen(false)}>✕</button>
             </div>
-            {subtitleStatus && <p className="text-sm text-gray-400 mb-2">{subtitleStatus}</p>}
+            {subtitleStatus && <p className="text-sm text-gray-400 mb-2">{bilingualBusy && <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-blue-400" />}{subtitleStatus}</p>}
             {subtitleResults.map((item) => (
               <button
                 key={item.fileId}

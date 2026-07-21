@@ -78,6 +78,16 @@ interface AiPlayerAPI {
     openAny: () => Promise<{ media: string[]; documents: Array<{ token: string; name: string; ext: string; size: number }> }>
     attachPaths: (filePaths: string[]) => Promise<{ documents: Array<{ token: string; name: string; ext: string; size: number }>; skipped: number }>
   }
+  transcribe?: {
+    status: () => Promise<{ available: boolean; engineOk: boolean; modelOk: boolean; reason: string; download: Partial<LocalAiDownloadProgress> & { active: boolean; installed: boolean; presentBytes: number; totalBytes: number }; pack: { tag: string; totalBytes: number; assetCount: number } }>
+    download: () => Promise<{ success: boolean; error?: string; availability?: unknown }>
+    cancelDownload: () => Promise<boolean>
+    onProgress: (cb: (progress: LocalAiDownloadProgress) => void) => () => void
+  }
+  subtitleBilingual?: {
+    generate: (input: { path: string; requestId: string }) => Promise<{ success: boolean; error?: string; needDownload?: boolean; srtPath?: string; count?: number; failed?: number }>
+    onStatus: (cb: (event: { requestId: string; status: string }) => void) => () => void
+  }
   player?: AiPlayerPlayerAPI
   sync?: {
     url: () => Promise<string | null>

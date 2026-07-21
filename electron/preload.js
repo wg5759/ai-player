@@ -195,6 +195,24 @@ contextBridge.exposeInMainWorld('aiPlayer', {
     search: (name, apiKey) => ipcRenderer.invoke('subtitle:search', name, apiKey),
     download: (fileId, apiKey) => ipcRenderer.invoke('subtitle:download', fileId, apiKey)
   },
+  transcribe: {
+    status: () => ipcRenderer.invoke('transcribe:status'),
+    download: () => ipcRenderer.invoke('transcribe:download'),
+    cancelDownload: () => ipcRenderer.invoke('transcribe:cancel-download'),
+    onProgress: (cb) => {
+      const handler = (_event, payload) => cb(payload)
+      ipcRenderer.on('transcribe:progress', handler)
+      return () => ipcRenderer.removeListener('transcribe:progress', handler)
+    }
+  },
+  subtitleBilingual: {
+    generate: (input) => ipcRenderer.invoke('subtitle:bilingual-generate', input),
+    onStatus: (cb) => {
+      const handler = (_event, payload) => cb(payload)
+      ipcRenderer.on('subtitle:bilingual-status', handler)
+      return () => ipcRenderer.removeListener('subtitle:bilingual-status', handler)
+    }
+  },
   xlsx: {
     preview: (filePath) => ipcRenderer.invoke('xlsx:preview', filePath)
   },

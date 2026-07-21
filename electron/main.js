@@ -45,6 +45,7 @@ const AUDIO_MEDIA_EXTS = ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.aac', '.wma
 const { WinRtOcrService } = require('./ocr-service')
 const { OfficeConvertService } = require('./office-convert-service')
 const { TranscriptionService } = require('./transcription-service')
+const { parseSrt, buildBilingualSrt, translateEntries } = require('./subtitle-bilingual-service')
 const { splitOpenAnyPaths, isPathInsideRoots } = require('./open-any')
 const { rasterizePdfPages } = require('./pdf-rasterizer')
 const { LocalAiDownloadService } = require('./local-ai-download-service')
@@ -373,6 +374,12 @@ const transcriptionService = new TranscriptionService({
     ? path.join(process.resourcesPath, 'bin', 'win', 'mpv.com')
     : path.join(__dirname, '..', 'resources', 'bin', 'win', 'mpv.com')
 })
+const WHISPER_PACK = require('./whisper-pack-manifest')
+const whisperDownload = new LocalAiDownloadService({
+  installRoot: path.join(app.getPath('userData'), 'whisper-pack'),
+  manifest: WHISPER_PACK,
+  logger: log
+})
 
 async function transcribeToFile(sourcePath, finalPath, { timestamps = false } = {}) {
   const transcription = await transcriptionService.transcribe({
@@ -544,6 +551,21 @@ app.whenReady().then(async () => {
     logger: log
   })
   agentEngine = new AgentEngine(mpv)
+  const llmComplete = async ({ systemPrompt, prompt, signal }) => {
+    let config = modelConfigStore.resolved('chat')
+    let usesBundledRuntime = false
+    try {
+      if (config.providerId === 'bundled-lite') {
+        const status = await bundledRuntime.start()
+        bundledRuntime.retain()
+        usesBundledRuntime = true
+        config = { ...config, model: status.model, baseUrl: status.baseUrl }
+      }
+      return await agentEngine.completeText([{ role: 'user', content: prompt }], config, { systemPrompt, signal })
+    } finally {
+      if (usesBundledRuntime) bundledRuntime.release()
+    }
+  }
   documentWorkspace = new DocumentWorkspaceService({
     outputRoot: path.join(app.getPath('documents'), 'AgentPlay 输出'),
     historyRoot: path.join(app.getPath('userData'), 'document-workspace'),
@@ -552,21 +574,7 @@ app.whenReady().then(async () => {
     officeConvert,
     imageWindow: createHiddenWindow,
     transcriber: { transcribeToFile },
-    complete: async ({ systemPrompt, prompt, signal }) => {
-      let config = modelConfigStore.resolved('chat')
-      let usesBundledRuntime = false
-      try {
-        if (config.providerId === 'bundled-lite') {
-          const status = await bundledRuntime.start()
-          bundledRuntime.retain()
-          usesBundledRuntime = true
-          config = { ...config, model: status.model, baseUrl: status.baseUrl }
-        }
-        return await agentEngine.completeText([{ role: 'user', content: prompt }], config, { systemPrompt, signal })
-      } finally {
-        if (usesBundledRuntime) bundledRuntime.release()
-      }
-    }
+    complete: llmComplete
   })
   const screenCapture = new ScreenCaptureService(() => mainWindow)
   computerUseOrchestrator = new ComputerUseOrchestrator({
@@ -654,6 +662,7 @@ app.whenReady().then(async () => {
       { type: 'separator' },
       item('截取当前画面…', 'screenshot', { enabled: !!state.hasMedia }),
       item(state.subtitleVisible ? '关闭字幕' : '打开字幕', 'subtitle-toggle', { enabled: !!state.hasMedia }),
+      item('生成双语字幕（离线识别+云端翻译）', 'bilingual-subtitle', { enabled: !!state.hasMedia }),
       item('拉片与原创重构…', 'analysis-studio', { enabled: !!state.hasMedia }),
       { label: '播放速度', submenu: [0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => item(`${rate}×`, `speed-${rate}`, { type: 'radio', checked: state.playbackRate === rate })) },
       { label: '画面比例', submenu: [
@@ -921,6 +930,66 @@ app.whenReady().then(async () => {
   ipcMain.handle('localai:cancel', (event) => {
     assertTrustedSender(event)
     return localAiDownload.cancel()
+  })
+  ipcMain.handle('transcribe:status', (event) => {
+    assertTrustedSender(event)
+    const availability = transcriptionService.availability()
+    return {
+      ...availability,
+      download: whisperDownload.status(),
+      pack: whisperDownload.packInfo()
+    }
+  })
+  ipcMain.handle('transcribe:download', async (event) => {
+    assertTrustedSender(event)
+    try {
+      await whisperDownload.start({
+        onProgress: (progress) => {
+          if (!event.sender.isDestroyed()) event.sender.send('transcribe:progress', progress)
+        }
+      })
+      return { success: true, availability: transcriptionService.availability() }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  ipcMain.handle('transcribe:cancel-download', (event) => {
+    assertTrustedSender(event)
+    return whisperDownload.cancel()
+  })
+  ipcMain.handle('subtitle:bilingual-generate', async (event, input = {}) => {
+    assertTrustedSender(event)
+    const mediaPath = String(input.path || '').trim()
+    if (!mediaPath || !fs.existsSync(mediaPath)) return { success: false, error: '没有可用的本地媒体文件' }
+    if (!userAuthorizedPaths.has(path.resolve(mediaPath)) && !isPathInsideRoots(mediaPath, [...authorizedFolders], { realpathSync: (value) => fs.realpathSync(value) })) {
+      return { success: false, error: '只允许处理你明确打开过或媒体库内的文件' }
+    }
+    const whisperStatus = transcriptionService.availability()
+    if (!whisperStatus.available) return { success: false, error: `${whisperStatus.reason}，请先下载转写组件`, needDownload: true }
+    const config = modelConfigStore.resolved('chat')
+    const requiresKey = config.requiresKey !== false
+    if (!config.baseUrl || !config.model || (requiresKey && !config.apiKey)) {
+      return { success: false, error: '双语字幕的翻译需要云端模型，请先在模型接入中心配置' }
+    }
+    const requestId = String(input.requestId || 'bilingual')
+    const sendStatus = (status) => {
+      if (!event.sender.isDestroyed()) event.sender.send('subtitle:bilingual-status', { requestId, status })
+    }
+    try {
+      sendStatus('正在离线识别语音（CPU，约为音频时长数倍）')
+      const transcription = await transcriptionService.transcribe({ sourcePath: mediaPath, lang: 'auto', timestamps: true })
+      const entries = parseSrt(transcription.text)
+      if (entries.length === 0) return { success: false, error: '没有识别到语音内容（可能是纯音乐或音量过低）' }
+      sendStatus(`识别到 ${entries.length} 句，正在逐批翻译`)
+      const { translations, failed } = await translateEntries(entries, llmComplete)
+      const bilingual = buildBilingualSrt(entries, translations)
+      const srtPath = path.join(path.dirname(mediaPath), `${path.parse(mediaPath).name}-AgentPlay双语.srt`)
+      fs.writeFileSync(srtPath, bilingual, 'utf8')
+      sendStatus('双语字幕已生成')
+      return { success: true, srtPath, count: entries.length, failed }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
   })
   ipcMain.handle('models:stop-bundled', async (event) => {
     assertTrustedSender(event)
