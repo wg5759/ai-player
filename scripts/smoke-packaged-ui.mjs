@@ -154,7 +154,7 @@ try {
   await delay(500)
   const body = await evaluate('document.body.innerText')
   const capabilities = await evaluate('window.aiPlayer.studio.capabilities()', true)
-  await evaluate("window.dispatchEvent(new CustomEvent('ai-player-action', { detail: 'agent' })); true")
+  await evaluate("window.dispatchEvent(new CustomEvent('ai-player-action', { detail: 'document-workspace' })); true")
   await delay(300)
   const documentWorkspace = await evaluate(`(async () => {
     const capabilities = await window.aiPlayer.documents.capabilities()
