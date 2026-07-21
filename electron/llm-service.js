@@ -500,6 +500,91 @@ class AgentEngine {
     }
   }
 
+  // 无工具调用的通用文本生成入口。文档工作台使用独立 system prompt，
+  // 避免把文档任务误路由成暂停、快进等播放器指令。
+  async completeText(messages, apiKey = null, options = {}) {
+    const resolved = this.resolveProvider(apiKey)
+    const { base, key, model, protocol, providerId, requiresKey = true } = resolved
+    if (!base || !model || (!key && requiresKey)) {
+      throw new Error('尚未配置可用模型，请先到“功能 → 模型接入中心”保存连接')
+    }
+
+    const systemPrompt = String(options.systemPrompt || '你是 AgentPlay 助手。')
+    const normalized = messages.map((message) => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: String(message.content || '')
+    }))
+
+    if (providerId === 'colibri') {
+      const result = await this.colibri.generate({
+        config: resolved,
+        messages: [{ role: 'system', content: systemPrompt }, ...normalized],
+        tools: [],
+        signal: options.signal,
+        onDelta: options.onDelta,
+        onStatus: options.onStatus
+      })
+      if (!result.text) throw new Error(result.cancelled ? '生成已取消' : '模型没有返回内容')
+      return { text: result.text, provider: providerId, model }
+    }
+
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    options.signal?.addEventListener('abort', abort, { once: true })
+    if (options.signal?.aborted) controller.abort()
+    const timer = setTimeout(abort, 90000)
+    try {
+      let response
+      if (protocol === 'anthropic') {
+        response = await safeFetch(resolved, `${base}/v1/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({ model, max_tokens: 4096, system: systemPrompt, messages: normalized }),
+          signal: controller.signal
+        })
+      } else if (protocol === 'gemini') {
+        response = await safeFetch(resolved, `${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: normalized.map((message) => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] }))
+          }),
+          signal: controller.signal
+        })
+      } else {
+        const headers = { 'Content-Type': 'application/json' }
+        if (key) headers.Authorization = `Bearer ${key}`
+        response = await safeFetch(resolved, `${base}/chat/completions`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'system', content: systemPrompt }, ...normalized],
+            max_tokens: providerId === 'bundled-lite' ? 1536 : 4096,
+            temperature: 0.2
+          }),
+          signal: controller.signal
+        })
+      }
+      if (!response.ok) throw new Error(`模型 API ${response.status}: ${(await response.text()).slice(0, 1000)}`)
+      const data = await response.json()
+      const text = protocol === 'anthropic'
+        ? (data.content || []).filter((block) => block.type === 'text').map((block) => block.text).join('\n')
+        : protocol === 'gemini'
+          ? (data.candidates?.[0]?.content?.parts || []).map((part) => part.text || '').join('\n')
+          : data.choices?.[0]?.message?.content
+      if (!text) throw new Error('模型没有返回内容')
+      return { text, provider: providerId, model }
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error(options.signal?.aborted ? '生成已取消' : '文档生成超时')
+      throw error
+    } finally {
+      clearTimeout(timer)
+      options.signal?.removeEventListener('abort', abort)
+    }
+  }
+
   async chat(messages, apiKey = null, context = null, options = {}) {
     const latestText = messages.length > 0 ? String(messages[messages.length - 1].content || '') : ''
     const local = this.localCommand(latestText)

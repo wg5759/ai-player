@@ -3,6 +3,21 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 const openFileSubscribers = new Set()
 const pendingOpenFiles = []
+const documentOpenSubscribers = new Set()
+const pendingDocumentOpens = []
+ipcRenderer.on('documents:open-external', (_event, files) => {
+  if (documentOpenSubscribers.size === 0) {
+    pendingDocumentOpens.push(files)
+    return
+  }
+  for (const subscriber of documentOpenSubscribers) subscriber(files)
+})
+
+function subscribeDocumentOpen(callback) {
+  documentOpenSubscribers.add(callback)
+  while (pendingDocumentOpens.length > 0) callback(pendingDocumentOpens.shift())
+  return () => documentOpenSubscribers.delete(callback)
+}
 ipcRenderer.on('menu:openFile', (_event, filePath) => {
   if (openFileSubscribers.size === 0) {
     pendingOpenFiles.push(filePath)
@@ -28,6 +43,29 @@ contextBridge.exposeInMainWorld('aiPlayer', {
       const handler = (_event, payload) => cb(payload)
       ipcRenderer.on('ai:stream', handler)
       return () => ipcRenderer.removeListener('ai:stream', handler)
+    }
+  },
+  documents: {
+    capabilities: () => ipcRenderer.invoke('documents:capabilities'),
+    selectFiles: () => ipcRenderer.invoke('documents:select-files'),
+    plan: (input) => ipcRenderer.invoke('documents:plan', input),
+    run: (input) => ipcRenderer.invoke('documents:run', input),
+    cancel: (requestId) => ipcRenderer.invoke('documents:cancel', requestId),
+    onOpenExternal: (cb) => subscribeDocumentOpen(cb),
+    onStatus: (cb) => {
+      const handler = (_event, payload) => cb(payload)
+      ipcRenderer.on('documents:status', handler)
+      return () => ipcRenderer.removeListener('documents:status', handler)
+    }
+  },
+  localAI: {
+    status: () => ipcRenderer.invoke('localai:status'),
+    download: () => ipcRenderer.invoke('localai:download'),
+    cancel: () => ipcRenderer.invoke('localai:cancel'),
+    onProgress: (cb) => {
+      const handler = (_event, payload) => cb(payload)
+      ipcRenderer.on('localai:progress', handler)
+      return () => ipcRenderer.removeListener('localai:progress', handler)
     }
   },
   models: {

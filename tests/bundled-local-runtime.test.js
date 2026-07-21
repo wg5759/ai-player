@@ -165,5 +165,5 @@ test('standard Windows installer stays lean while preserving external and cloud 
 
   const modelCenter = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ModelCenter.tsx'), 'utf8')
   assert.match(modelCenter, /!item\.bundled \|\| bundledStatus\?\.assetsPresent/)
-  assert.match(modelCenter, /当前是标准版，未携带 409MB 模型/)
+  assert.match(modelCenter, /当前是标准版，未携带本地模型/)
 })

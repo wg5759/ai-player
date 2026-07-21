@@ -28,6 +28,52 @@ interface AiPlayerAPI {
   platform: string
   isElectron: boolean
   version: string
+  documents?: {
+    capabilities: () => Promise<{
+      formats: string[]
+      modelConfigured: boolean
+      modelLocal: boolean
+      providerName: string
+      model: string
+      defaultOutputDir: string
+    }>
+    selectFiles: () => Promise<Array<{ token: string; name: string; ext: string; size: number }>>
+    plan: (input: {
+      tokens: string[]
+      instruction: string
+      outputFormat: string
+    }) => Promise<{
+      kind: string
+      requiresAi: boolean
+      outputFormat: string
+      summary: string
+      files: Array<{ name: string; ext: string; size: number }>
+    }>
+    run: (input: {
+      tokens: string[]
+      instruction: string
+      outputFormat: string
+      cloudApproved: boolean
+      requestId: string
+    }) => Promise<{
+      success: boolean
+      requestId: string
+      outputs?: string[]
+      summary?: string
+      historyId?: string
+      plan?: { kind: string; requiresAi: boolean; outputFormat: string }
+      error?: string
+    }>
+    cancel: (requestId: string) => Promise<boolean>
+    onStatus: (cb: (event: { requestId: string; status: string }) => void) => () => void
+    onOpenExternal: (cb: (files: Array<{ token: string; name: string; ext: string; size: number }>) => void) => () => void
+  }
+  localAI?: {
+    status: () => Promise<LocalAiComponentStatus>
+    download: () => Promise<{ success: boolean; error?: string; status?: BundledModelStatus }>
+    cancel: () => Promise<boolean>
+    onProgress: (cb: (progress: LocalAiDownloadProgress) => void) => () => void
+  }
   player?: AiPlayerPlayerAPI
   sync?: {
     url: () => Promise<string | null>
@@ -245,6 +291,7 @@ interface BundledModelStatus {
   state: 'stopped' | 'verifying' | 'loading' | 'ready' | 'error'
   running: boolean
   assetsPresent: boolean
+  assetsLocation?: 'bundled' | 'userData' | null
   modelName: string
   modelSizeMb: number
   providerId: string
@@ -264,4 +311,24 @@ interface BundledModelStatus {
     threads: number
     batchThreads: number
   }
+}
+
+
+interface LocalAiDownloadProgress {
+  stage: 'download' | 'verify' | 'extract' | 'done'
+  currentFile: string
+  fileIndex: number
+  fileCount: number
+  receivedBytes: number
+  totalBytes: number
+}
+
+interface LocalAiComponentStatus extends BundledModelStatus {
+  download: Partial<LocalAiDownloadProgress> & {
+    active: boolean
+    installed: boolean
+    presentBytes: number
+    totalBytes: number
+  }
+  pack: { tag: string; totalBytes: number; assetCount: number }
 }

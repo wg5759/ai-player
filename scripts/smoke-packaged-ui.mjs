@@ -154,6 +154,21 @@ try {
   await delay(500)
   const body = await evaluate('document.body.innerText')
   const capabilities = await evaluate('window.aiPlayer.studio.capabilities()', true)
+  await evaluate("window.dispatchEvent(new CustomEvent('ai-player-action', { detail: 'document-workspace' })); true")
+  await delay(300)
+  const documentWorkspace = await evaluate(`(async () => {
+    const capabilities = await window.aiPlayer.documents.capabilities()
+    const plan = await window.aiPlayer.documents.plan({
+      tokens: [], instruction: '生成一份 Word 文档', outputFormat: 'docx'
+    })
+    return {
+      visible: document.body.innerText.includes('AI 文档工作台'),
+      hasTextInput: Boolean(document.querySelector('textarea')),
+      hasVoiceInput: document.body.innerText.includes('语音输入'),
+      formats: capabilities.formats,
+      plan
+    }
+  })()`, true)
   const result = {
     version,
     videoLoaded: Boolean(playback.present && playback.readyState >= 1 && playback.videoWidth > 0 && playback.videoHeight > 0 && !playback.error),
@@ -170,9 +185,10 @@ try {
     creativeTabVisible: body.includes('4 AI 成片'),
     advancedRender: capabilities?.advancedRender,
     systemVoice: capabilities?.systemVoice,
-    renderBinary: capabilities?.renderBinary
+    renderBinary: capabilities?.renderBinary,
+    documentWorkspace
   }
-  if (version !== expectedVersion || !Object.values({ videoLoaded: result.videoLoaded, idleChromeHidden, idleMenuHidden, activityChromeVisible, activityMenuVisible, pausedChromeVisible, pausedMenuVisible, studioVisible: result.studioVisible, creativeTabVisible: result.creativeTabVisible, advancedRender: result.advancedRender, systemVoice: result.systemVoice }).every(Boolean)) {
+  if (version !== expectedVersion || !Object.values({ videoLoaded: result.videoLoaded, idleChromeHidden, idleMenuHidden, activityChromeVisible, activityMenuVisible, pausedChromeVisible, pausedMenuVisible, studioVisible: result.studioVisible, creativeTabVisible: result.creativeTabVisible, advancedRender: result.advancedRender, systemVoice: result.systemVoice, documentWorkspaceVisible: documentWorkspace.visible, documentTextInput: documentWorkspace.hasTextInput, documentVoiceInput: documentWorkspace.hasVoiceInput, documentFormats: documentWorkspace.formats.includes('docx') && documentWorkspace.formats.includes('xlsx') && documentWorkspace.formats.includes('pptx') && documentWorkspace.formats.includes('pdf'), documentPlan: documentWorkspace.plan.requiresAi && documentWorkspace.plan.outputFormat === 'docx' }).every(Boolean)) {
     throw new Error(`正式 EXE 验收失败：${JSON.stringify(result)}`)
   }
   process.stdout.write(`${JSON.stringify(result)}\n`)

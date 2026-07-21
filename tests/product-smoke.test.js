@@ -66,6 +66,57 @@ test('both Windows installers repair the per-user Open with command without taki
   assert.doesNotMatch(installer, /Software\\Classes\\\.mp4/)
 })
 
+test('Windows installer registers the AgentPlay document verb for documents, separate from the player', () => {
+  const installer = fs.readFileSync(path.join(__dirname, '..', 'build', 'installer.nsh'), 'utf8')
+  const documentExts = ['.txt', '.md', '.csv', '.docx', '.xlsx', '.pptx', '.pdf']
+  for (const ext of documentExts) {
+    assert.ok(installer.includes(`SystemFileAssociations\\${ext}\\shell\\AgentPlayDocuments`), `missing verb for ${ext}`)
+    assert.ok(!installer.includes(`SupportedTypes" "${ext}"`), `document ${ext} must stay out of the player Open with list`)
+  }
+  assert.equal(installer.match(/AgentPlayDocuments\\command/g)?.length, documentExts.length)
+  assert.ok(installer.includes('用 AgentPlay 智能处理'))
+  assert.ok(installer.includes('--agentplay-documents'))
+  assert.ok(installer.includes('MultiSelectModel'))
+  assert.equal(installer.match(/DeleteRegKey HKCU "Software\\Classes\\SystemFileAssociations\\/g)?.length, documentExts.length)
+})
+
+test('Explorer AgentPlay document verb is routed to the document workspace, never the player', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8')
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'electron', 'preload.js'), 'utf8')
+  const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8')
+  const workspace = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'DocumentWorkspace.tsx'), 'utf8')
+  const guard = main.match(/function queueExternalMediaArgs\(argv\) \{([\s\S]*?)\n\}/)
+  assert.ok(guard, 'queueExternalMediaArgs body must be found')
+  assert.ok(guard[1].includes('hasDocumentVerbFlag(argv)'), 'document verb guard must run inside queueExternalMediaArgs')
+  assert.ok(guard[1].indexOf('hasDocumentVerbFlag(argv)') < guard[1].indexOf('extractExternalMediaPaths'), 'guard must run before media extraction')
+  assert.match(main, /documents:open-external/)
+  assert.match(main, /did-finish-load[\s\S]{0,300}flushPendingDocuments\(\)/)
+  assert.match(preload, /documents:open-external/)
+  assert.match(preload, /onOpenExternal/)
+  assert.match(app, /onOpenExternal/)
+  assert.match(app, /initialFiles=\{documentInitialFiles\}/)
+  assert.match(workspace, /initialFiles/)
+})
+
+test('single installer carries the in-app local AI download instead of a second package', () => {
+  const packageConfig = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'))
+  const main = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8')
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'electron', 'preload.js'), 'utf8')
+  const modelCenter = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ModelCenter.tsx'), 'utf8')
+  const verifyRelease = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'verify-release.mjs'), 'utf8')
+  const packManifest = require('../electron/local-ai-pack-manifest')
+  assert.equal(packageConfig.scripts['build:electron'], 'pnpm build:web && pnpm build:electron:lean')
+  assert.match(main, /new LocalAiDownloadService\(\{[\s\S]{0,200}userData/)
+  assert.match(main, /localai:download/)
+  assert.match(main, /localai:cancel/)
+  assert.match(preload, /localai:status/)
+  assert.match(preload, /localai:progress/)
+  assert.match(modelCenter, /下载本地 AI 组件/)
+  assert.match(modelCenter, /localAI\?\.download\(\)/)
+  assert.match(verifyRelease, /local-ai-download-service\.js/)
+  assert.ok(packManifest.assets.length >= 2)
+})
+
 test('AgentPlay branding preserves the 0.6.x internal app identity and existing user data', () => {
   const packageConfig = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'))
   const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8')

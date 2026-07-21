@@ -162,6 +162,7 @@ function directJson(port, pathname, options = {}) {
 class BundledLocalRuntime {
   constructor(options = {}) {
     this.resourceRoot = options.resourceRoot
+    this.userDataRoot = options.userDataRoot || null
     this.spawnImpl = options.spawnImpl || spawn
     this.port = options.port || BUNDLED_PORT
     this.child = null
@@ -184,12 +185,25 @@ class BundledLocalRuntime {
     return assessHardware()
   }
 
+  installRoot() {
+    if (this.userDataRoot) {
+      const markers = [
+        path.join(this.userDataRoot, 'bundled-ai-manifest.json'),
+        path.join(this.userDataRoot, 'ai-runtime', 'win-x64', 'llama-server.exe'),
+        path.join(this.userDataRoot, 'models', 'Qwen2.5-0.5B-Instruct-Q4_0.gguf')
+      ]
+      if (markers.every((marker) => fs.existsSync(marker))) return this.userDataRoot
+    }
+    return this.resourceRoot
+  }
+
   paths() {
+    const root = this.installRoot()
     return {
-      manifest: path.join(this.resourceRoot, 'bundled-ai-manifest.json'),
-      runtimeDir: path.join(this.resourceRoot, 'ai-runtime', 'win-x64'),
-      executable: path.join(this.resourceRoot, 'ai-runtime', 'win-x64', 'llama-server.exe'),
-      model: path.join(this.resourceRoot, 'models', 'Qwen2.5-0.5B-Instruct-Q4_0.gguf')
+      manifest: path.join(root, 'bundled-ai-manifest.json'),
+      runtimeDir: path.join(root, 'ai-runtime', 'win-x64'),
+      executable: path.join(root, 'ai-runtime', 'win-x64', 'llama-server.exe'),
+      model: path.join(root, 'models', 'Qwen2.5-0.5B-Instruct-Q4_0.gguf')
     }
   }
 
@@ -208,10 +222,12 @@ class BundledLocalRuntime {
         }
       : liveProfile
     const assetsPresent = fs.existsSync(paths.manifest) && fs.existsSync(paths.executable) && fs.existsSync(paths.model)
+    const assetsLocation = !assetsPresent ? null : (this.userDataRoot && this.installRoot() === this.userDataRoot ? 'userData' : 'bundled')
     return {
       state: this.state,
       running,
       assetsPresent,
+      assetsLocation,
       modelName: 'Qwen2.5-0.5B Instruct Q4_0',
       modelSizeMb: 409,
       providerId: BUNDLED_PROVIDER_ID,
@@ -261,7 +277,7 @@ class BundledLocalRuntime {
     this.lastError = ''
     try {
       if (!this.verified) {
-        await verifyBundle(this.resourceRoot)
+        await verifyBundle(this.installRoot())
         this.verified = true
       }
       const launchHardware = this.profile()

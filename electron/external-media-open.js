@@ -38,4 +38,30 @@ function extractExternalMediaPaths(argv, options = {}) {
   return found
 }
 
-module.exports = { extractExternalMediaPaths, normalizeExternalPath }
+const DOCUMENT_VERB_FLAG = '--agentplay-documents'
+
+function hasDocumentVerbFlag(argv) {
+  return (Array.isArray(argv) ? argv : []).some(
+    (value) => String(value || '').trim().toLowerCase() === DOCUMENT_VERB_FLAG
+  )
+}
+
+// Paths handed over through the Explorer "用 AgentPlay 智能处理" verb. Only
+// arguments after the flag are considered so the executable path and other
+// switches in the command line can never be mistaken for documents.
+function extractDocumentVerbPaths(argv, options = {}) {
+  const list = Array.isArray(argv) ? argv : []
+  const flagIndex = list.findIndex(
+    (value) => String(value || '').trim().toLowerCase() === DOCUMENT_VERB_FLAG
+  )
+  if (flagIndex === -1) return []
+  return extractExternalMediaPaths(list.slice(flagIndex + 1), options)
+}
+
+module.exports = {
+  extractExternalMediaPaths,
+  normalizeExternalPath,
+  DOCUMENT_VERB_FLAG,
+  hasDocumentVerbFlag,
+  extractDocumentVerbPaths
+}

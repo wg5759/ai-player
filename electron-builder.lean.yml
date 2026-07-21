@@ -6,6 +6,7 @@ npmRebuild: false
 files:
   - dist/**/*
   - electron/**/*
+  - '!node_modules/canvas/**'
 extraResources:
   - from: resources/bin/win
     to: bin/win

@@ -2,11 +2,11 @@
 
 本文件只记录实际证据。能编译、能同步工程、能生成安装包和能在真机完整使用是四种不同结论。
 
-## 当前结论（2026-07-18）
+## 当前结论（2026-07-21）
 
 | 端 | 已验证 | 尚未验证 / 阻塞 |
 |---|---|---|
-| Windows 11 x64 | 55/55 自动化测试；TypeScript、ESLint、Web/PWA 构建；0.6.1 标准版和本地 AI 版 NSIS；两种正式 EXE 均验证版本 0.6.1、加载视频、显示“4 AI 成片”；包内 mpv + SAPI 完成 4 秒 H.264/AAC 真渲染；生产依赖审计为 0 已知漏洞；mpv 官方资产逐文件哈希、GPL 构建脚本与许可证已确认 | 未购买 Authenticode 证书，安装时仍会显示未知发布者；公开二进制前仍须托管该静态构建的完整 GPL 对应源码包 |
+| Windows 11 x64 | 87/87 自动化测试；TypeScript、ESLint、Web/PWA 构建、生产依赖审计 0 已知漏洞；0.6.1 标准版单安装包（本地 AI 改为应用内下载，本地AI版脚本保留回退）；本地 AI 组件包已托管 GitHub Release local-ai-pack-v1，资产字节数与 SHA-256 在线复核一致，用户实机确认应用内下载、取消与续传可用；资源管理器“用 AgentPlay 智能处理”动词 7/7 扩展名注册在册，命令行实测成功转交文档工作台；PDF 文字层提取与 DOC/ODT/ODS/ODP/RTF/HTML 共 16 种文档格式自动化回归；包内 mpv + SAPI 完成 H.264/AAC 真渲染（既有） | 未购买 Authenticode 证书（计划 SignPath 开源免费签名），安装时显示未知发布者；Win11 第一层右键菜单不显示传统注册动词（系统限制，位于“显示更多选项”）；PDF/DOC 提取缺用户真实文件回归；扫描 PDF OCR、复杂 Office 版式无损编辑未交付；正式发布前须版本升级与静态资产核对 |
 | Web PWA | Vite 生产构建退出 0；产物包含 index、JS、CSS、manifest、service worker | 浏览器没有 Electron IPC，不能直接访问本地模型密钥库、SAPI、mpv 创意渲染；不能算桌面功能等价 |
 | Android | Capacitor 8.4.2 `sync android` 曾成功，Web 产物已复制到 Android 工程 | 0.6.1 尚未重做 APK 构建与真机验证；文件选择、后台音频、AI 成片均未验证 |
 | macOS | CI 构建定义存在；代码对系统 `say` 配音有适配 | 本机不是 Mac，未生成/启动 DMG；仓库没有 macOS mpv 闭包，高级 MP4 渲染会明确显示不可用 |

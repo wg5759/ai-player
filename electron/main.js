@@ -4,6 +4,7 @@
 const { app, BrowserWindow, ipcMain, Menu, dialog, safeStorage } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
 const { spawn } = require('child_process')
 const { MpvService } = require('./mpv-service')
 const { shouldEmbedMpv } = require('./playback-policy')
@@ -28,7 +29,7 @@ const { ComputerUseProvider } = require('./adapters/computer-use-provider')
 const { ComputerUseOrchestrator } = require('./computer-use-orchestrator')
 const { ScreenCaptureService } = require('./screen-capture-service')
 const { BundledLocalRuntime } = require('./bundled-local-runtime')
-const { extractExternalMediaPaths } = require('./external-media-open')
+const { extractExternalMediaPaths, hasDocumentVerbFlag, extractDocumentVerbPaths } = require('./external-media-open')
 const { buildOfflineAnalysis, loadAnalysisContext, renderRecut } = require('./analysis-studio-service')
 const {
   generateImageAsset,
@@ -37,6 +38,9 @@ const {
   synthesizeCloudVoice,
   synthesizeSystemVoice
 } = require('./creative-studio-service')
+const { DocumentWorkspaceService, SUPPORTED_EXTENSIONS } = require('./document-workspace-service')
+const { LocalAiDownloadService } = require('./local-ai-download-service')
+const LOCAL_AI_PACK = require('./local-ai-pack-manifest')
 
 process.on('uncaughtException', (error) => log.error('主进程未捕获异常', error))
 process.on('unhandledRejection', (error) => log.error('主进程未处理 Promise', error))
@@ -58,9 +62,15 @@ let playerArea = null
 let mpvReady = false
 let rendererLoaded = false
 let activeRecutProcess = null
+let documentWorkspace = null
+let localAiDownload = null
 const pendingExternalMedia = []
+const pendingDocumentFiles = []
+let documentFlushTimer = null
 const activeAiRequests = new Map()
 const activeComputerUseRequests = new Map()
+const activeDocumentRequests = new Map()
+const approvedDocumentSelections = new Map()
 
 ipcMain.on('app:version', (event) => {
   event.returnValue = app.getVersion()
@@ -92,12 +102,58 @@ function flushPendingExternalMedia() {
 }
 
 function queueExternalMediaArgs(argv) {
+  if (hasDocumentVerbFlag(argv)) return queueDocumentVerbArgs(argv)
   const filePath = extractExternalMediaPaths(argv)[0]
   if (!filePath) return false
   pendingExternalMedia.length = 0
   pendingExternalMedia.push(filePath)
   log.info(`收到系统打开文件请求: ${path.basename(filePath)}`)
   flushPendingExternalMedia()
+  return true
+}
+
+function approveDocumentPaths(filePaths) {
+  const files = documentWorkspace.inspect(filePaths)
+  return files.map((file) => {
+    const token = crypto.randomUUID()
+    approvedDocumentSelections.set(token, { path: file.path, createdAt: Date.now() })
+    return { token, name: file.name, ext: file.ext, size: file.size }
+  })
+}
+
+function flushPendingDocuments() {
+  if (pendingDocumentFiles.length === 0) return false
+  if (!rendererLoaded || !mainWindow || mainWindow.isDestroyed() || !documentWorkspace) return false
+  const paths = pendingDocumentFiles.splice(0)
+  try {
+    mainWindow.webContents.send('documents:open-external', approveDocumentPaths(paths))
+    log.info(`已把 ${paths.length} 个资源管理器文档请求转交文档工作台`)
+  } catch (error) {
+    log.error('资源管理器文档处理请求无效', error)
+  }
+  return true
+}
+
+// Windows 资源管理器“用 AgentPlay 智能处理”动词：多选时每个文件会各起一个
+// 进程，这里汇总后成批交给文档工作台，绝不送入播放器。
+function queueDocumentVerbArgs(argv) {
+  const paths = extractDocumentVerbPaths(argv, { allowedExtensions: SUPPORTED_EXTENSIONS })
+  if (paths.length === 0) return false
+  const identityOf = (filePath) => (process.platform === 'win32' ? filePath.toLowerCase() : filePath)
+  const seen = new Set(pendingDocumentFiles.map(identityOf))
+  for (const filePath of paths) {
+    if (seen.has(identityOf(filePath)) || pendingDocumentFiles.length >= 20) continue
+    seen.add(identityOf(filePath))
+    pendingDocumentFiles.push(filePath)
+  }
+  if (pendingDocumentFiles.length === 0) return false
+  log.info(`收到资源管理器文档处理请求: ${paths.map((filePath) => path.basename(filePath)).join(', ')}`)
+  if (documentFlushTimer) clearTimeout(documentFlushTimer)
+  documentFlushTimer = setTimeout(() => {
+    documentFlushTimer = null
+    flushPendingDocuments()
+  }, 700)
+  if (typeof documentFlushTimer.unref === 'function') documentFlushTimer.unref()
   return true
 }
 
@@ -221,6 +277,7 @@ function createWindow() {
   mainWindow.webContents.once('did-finish-load', async () => {
     rendererLoaded = true
     flushPendingExternalMedia()
+    flushPendingDocuments()
     try {
       const injected = await mainWindow.webContents.executeJavaScript('window.aiPlayer?.isElectron === true')
       log.info(`桌面桥接注入状态: ${injected}`)
@@ -247,6 +304,40 @@ const openFileOptions = {
 async function chooseFile() {
   const result = await dialog.showOpenDialog(mainWindow, openFileOptions)
   return result.canceled ? null : result.filePaths[0]
+}
+
+async function renderHtmlToPdf(html, finalPath) {
+  const preview = new BrowserWindow({
+    show: false,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false }
+  })
+  const tempPath = `${finalPath}.${process.pid}.tmp`
+  try {
+    await preview.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(String(html || ''))}`)
+    const buffer = await preview.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4',
+      margins: { marginType: 'none' }
+    })
+    fs.writeFileSync(tempPath, buffer)
+    fs.renameSync(tempPath, finalPath)
+  } finally {
+    if (fs.existsSync(tempPath)) fs.rmSync(tempPath, { force: true })
+    if (!preview.isDestroyed()) preview.destroy()
+  }
+}
+
+function documentSelectionFromToken(token) {
+  const record = approvedDocumentSelections.get(String(token || ''))
+  if (!record || Date.now() - record.createdAt > 24 * 60 * 60 * 1000) {
+    approvedDocumentSelections.delete(String(token || ''))
+    throw new Error('文件选择已过期，请重新选择')
+  }
+  return record.path
+}
+
+function isLocalModelConfig(config) {
+  return Boolean(config?.providerId === 'bundled-lite' || config?.localOnly || /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(config?.baseUrl || ''))
 }
 
 function sendAction(action) {
@@ -306,6 +397,7 @@ const menuTemplate = [
   ] },
   { label: '功能', submenu: [
     { label: 'AI 助手', accelerator: 'CmdOrCtrl+K', click: () => sendAction('agent') },
+    { label: 'AI 文档工作台…', accelerator: 'CmdOrCtrl+D', click: () => sendAction('document-workspace') },
     { label: '模型接入中心…', click: () => sendAction('model-center') },
     { label: '拉片、深度解剖与原创重构…', accelerator: 'CmdOrCtrl+L', click: () => sendAction('analysis-studio') },
     { type: 'separator' },
@@ -359,9 +451,35 @@ app.whenReady().then(async () => {
 
   modelConfigStore = new ModelConfigStore(app.getPath('userData'), safeStorage)
   bundledRuntime = new BundledLocalRuntime({
-    resourceRoot: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', 'resources')
+    resourceRoot: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', 'resources'),
+    userDataRoot: path.join(app.getPath('userData'), 'local-ai')
+  })
+  localAiDownload = new LocalAiDownloadService({
+    installRoot: path.join(app.getPath('userData'), 'local-ai'),
+    manifest: LOCAL_AI_PACK,
+    logger: log
   })
   agentEngine = new AgentEngine(mpv)
+  documentWorkspace = new DocumentWorkspaceService({
+    outputRoot: path.join(app.getPath('documents'), 'AgentPlay 输出'),
+    historyRoot: path.join(app.getPath('userData'), 'document-workspace'),
+    renderPdf: renderHtmlToPdf,
+    complete: async ({ systemPrompt, prompt, signal }) => {
+      let config = modelConfigStore.resolved('chat')
+      let usesBundledRuntime = false
+      try {
+        if (config.providerId === 'bundled-lite') {
+          const status = await bundledRuntime.start()
+          bundledRuntime.retain()
+          usesBundledRuntime = true
+          config = { ...config, model: status.model, baseUrl: status.baseUrl }
+        }
+        return await agentEngine.completeText([{ role: 'user', content: prompt }], config, { systemPrompt, signal })
+      } finally {
+        if (usesBundledRuntime) bundledRuntime.release()
+      }
+    }
+  })
   const screenCapture = new ScreenCaptureService(() => mainWindow)
   computerUseOrchestrator = new ComputerUseOrchestrator({
     capture: () => screenCapture.capture(),
@@ -533,6 +651,84 @@ app.whenReady().then(async () => {
     controller?.abort()
     return Boolean(controller)
   })
+  ipcMain.handle('documents:capabilities', (event) => {
+    assertTrustedSender(event)
+    const config = modelConfigStore.resolved('chat')
+    const requiresKey = config.requiresKey !== false
+    return {
+      formats: ['txt', 'md', 'csv', 'doc', 'docx', 'xlsx', 'pptx', 'pdf', 'odt', 'ods', 'odp', 'rtf', 'html'],
+      modelConfigured: Boolean(config.baseUrl && config.model && (!requiresKey || config.apiKey)),
+      modelLocal: isLocalModelConfig(config),
+      providerName: config.providerName || config.providerId || '未配置',
+      model: config.model || '',
+      defaultOutputDir: path.join(app.getPath('documents'), 'AgentPlay 输出')
+    }
+  })
+  ipcMain.handle('documents:select-files', async (event) => {
+    assertTrustedSender(event)
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择要交给 AgentPlay 处理的文件',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: '文档、表格、演示稿和 PDF', extensions: [...SUPPORTED_EXTENSIONS].map((ext) => ext.slice(1)) },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    })
+    if (result.canceled) return []
+    return approveDocumentPaths(result.filePaths.slice(0, 20))
+  })
+  ipcMain.handle('documents:plan', (event, input = {}) => {
+    assertTrustedSender(event)
+    const tokens = Array.isArray(input.tokens) ? input.tokens.slice(0, 20) : []
+    const paths = tokens.map(documentSelectionFromToken)
+    const plan = documentWorkspace.plan(paths, input.instruction, input.outputFormat)
+    return {
+      kind: plan.kind,
+      requiresAi: plan.requiresAi,
+      outputFormat: plan.outputFormat,
+      summary: plan.summary,
+      files: plan.files.map(({ name, ext, size }) => ({ name, ext, size }))
+    }
+  })
+  ipcMain.handle('documents:run', async (event, input = {}) => {
+    assertTrustedSender(event)
+    const requestId = normalizeRequestId(input.requestId, 'document')
+    activeDocumentRequests.get(requestId)?.abort()
+    const controller = new AbortController()
+    activeDocumentRequests.set(requestId, controller)
+    const sendStatus = (status) => {
+      if (!event.sender.isDestroyed()) event.sender.send('documents:status', { requestId, status })
+    }
+    try {
+      const tokens = Array.isArray(input.tokens) ? input.tokens.slice(0, 20) : []
+      const paths = tokens.map(documentSelectionFromToken)
+      const plan = documentWorkspace.plan(paths, input.instruction, input.outputFormat)
+      if (plan.requiresAi) {
+        const config = modelConfigStore.resolved('chat')
+        const requiresKey = config.requiresKey !== false
+        if (!config.baseUrl || !config.model || (requiresKey && !config.apiKey)) {
+          throw new Error('这个任务需要模型理解内容，请先在“模型接入中心”配置模型')
+        }
+        if (paths.length > 0 && !isLocalModelConfig(config) && input.cloudApproved !== true) {
+          throw new Error('当前连接的是云端模型。请勾选“允许发送所选文件内容”，或改用本地模型')
+        }
+      }
+      sendStatus(plan.requiresAi ? '正在理解要求和生成内容' : '正在执行本地文档操作')
+      const result = await documentWorkspace.run(paths, input.instruction, input.outputFormat, { signal: controller.signal })
+      sendStatus('正在验证并保存结果')
+      return { ...result, requestId }
+    } catch (error) {
+      return { success: false, requestId, error: error instanceof Error ? error.message : String(error) }
+    } finally {
+      activeDocumentRequests.delete(requestId)
+    }
+  })
+  ipcMain.handle('documents:cancel', (event, requestId) => {
+    assertTrustedSender(event)
+    const controller = activeDocumentRequests.get(String(requestId || ''))
+    controller?.abort()
+    return Boolean(controller)
+  })
   ipcMain.handle('models:providers', (event) => {
     assertTrustedSender(event)
     return PROVIDERS
@@ -580,6 +776,27 @@ app.whenReady().then(async () => {
   ipcMain.handle('models:start-bundled', async (event) => {
     assertTrustedSender(event)
     return bundledRuntime.start()
+  })
+  ipcMain.handle('localai:status', (event) => {
+    assertTrustedSender(event)
+    return { ...bundledRuntime.status(), download: localAiDownload.status(), pack: localAiDownload.packInfo() }
+  })
+  ipcMain.handle('localai:download', async (event) => {
+    assertTrustedSender(event)
+    try {
+      await localAiDownload.start({
+        onProgress: (progress) => {
+          if (!event.sender.isDestroyed()) event.sender.send('localai:progress', progress)
+        }
+      })
+      return { success: true, status: bundledRuntime.status() }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  ipcMain.handle('localai:cancel', (event) => {
+    assertTrustedSender(event)
+    return localAiDownload.cancel()
   })
   ipcMain.handle('models:stop-bundled', async (event) => {
     assertTrustedSender(event)
@@ -896,6 +1113,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   for (const controller of activeAiRequests.values()) controller.abort()
   for (const controller of activeComputerUseRequests.values()) controller.abort()
+  for (const controller of activeDocumentRequests.values()) controller.abort()
   if (mpv) mpv.stop()
   if (mpvContainer && !mpvContainer.isDestroyed()) mpvContainer.destroy()
   if (wifiTransfer) wifiTransfer.stop()

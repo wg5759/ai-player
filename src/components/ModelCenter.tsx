@@ -42,6 +42,10 @@ export default function ModelCenter({ onClose }: Props) {
   const [busy, setBusy] = useState(false)
   const [discovered, setDiscovered] = useState<DiscoveredService[]>([])
   const [bundledStatus, setBundledStatus] = useState<BundledModelStatus | null>(null)
+  const [downloadProgress, setDownloadProgress] = useState<LocalAiDownloadProgress | null>(null)
+  const [downloadActive, setDownloadActive] = useState(false)
+  const [downloadError, setDownloadError] = useState('')
+  const [packBytes, setPackBytes] = useState(0)
 
   const roleProviders = useMemo(
     () => providers.filter((item) => item.roles.includes(role) && (!item.bundled || bundledStatus?.assetsPresent)),
@@ -55,11 +59,13 @@ export default function ModelCenter({ onClose }: Props) {
 
   useEffect(() => {
     let active = true
-    Promise.all([window.aiPlayer?.models?.providers(), window.aiPlayer?.models?.config('chat'), window.aiPlayer?.models?.bundledStatus()]).then(([items, saved, localStatus]) => {
+    Promise.all([window.aiPlayer?.models?.providers(), window.aiPlayer?.models?.config('chat'), window.aiPlayer?.models?.bundledStatus(), window.aiPlayer?.localAI?.status()]).then(([items, saved, localStatus, localAiStatus]) => {
       if (!active) return
       const nextProviders = items || []
       setProviders(nextProviders)
       setBundledStatus(localStatus || null)
+      setPackBytes(localAiStatus?.pack?.totalBytes || 0)
+      setDownloadActive(Boolean(localAiStatus?.download?.active))
       if (saved && !(saved.providerId === 'bundled-lite' && !localStatus?.assetsPresent)) {
         setProviderId(saved.providerId)
         setModel(saved.model)
@@ -72,7 +78,15 @@ export default function ModelCenter({ onClose }: Props) {
         setBaseUrl(initial.baseUrl)
       }
     })
-    return () => { active = false }
+    const offProgress = window.aiPlayer?.localAI?.onProgress?.((progress) => {
+      if (!active) return
+      setDownloadProgress(progress)
+      setDownloadActive(progress.stage !== 'done')
+      if (progress.stage === 'done') {
+        void window.aiPlayer?.models?.bundledStatus().then((next) => { if (active && next) setBundledStatus(next) })
+      }
+    })
+    return () => { active = false; offProgress?.() }
   }, [])
 
   const changeRole = async (nextRole: ModelRole) => {
@@ -155,6 +169,27 @@ export default function ModelCenter({ onClose }: Props) {
     setApiKey('')
     setHasApiKey(false)
     setStatus(`已填入 ${service.name}，请测试连接后保存。`)
+  }
+
+  const startLocalAiDownload = async () => {
+    setDownloadError('')
+    setDownloadActive(true)
+    try {
+      const result = await window.aiPlayer?.localAI?.download()
+      if (!result) throw new Error('桌面本地下载接口不可用')
+      if (!result.success) throw new Error(result.error || '下载失败')
+      if (result.status) setBundledStatus(result.status)
+      setStatus('✓ 本地 AI 组件已下载并通过校验，可以启动内置模型。')
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setDownloadActive(false)
+      setDownloadProgress(null)
+    }
+  }
+
+  const cancelLocalAiDownload = async () => {
+    await window.aiPlayer?.localAI?.cancel()
   }
 
   const startBundled = async () => {
@@ -252,7 +287,21 @@ export default function ModelCenter({ onClose }: Props) {
                 </div>
                 <div className={`mt-2 text-xs ${bundledStatus.hardware.eligible ? 'text-emerald-300/80' : 'text-amber-300'}`}>{bundledStatus.hardware.reason}</div>
                 <div className="mt-2 text-xs text-sky-300/80">暂停、快进、音量、倍速、字幕、画面比例、窗口和截图均走本地快速路由；模型只做语义与字幕摘要，闲置 {bundledStatus.idleReleaseMinutes} 分钟自动释放。</div>
-                {!bundledStatus.assetsPresent && <div className="mt-2 text-xs text-amber-300">当前是标准版，未携带 409MB 模型；播放器控制完全可用，也可连接云端或已有 Ollama、LM Studio、vLLM、llama.cpp 服务。需要内置离线摘要时再安装“本地 AI 版”。</div>}
+                {!bundledStatus.assetsPresent && <div className="mt-3 rounded-lg border border-sky-500/25 bg-sky-500/5 p-3">
+                  <div className="text-xs text-gray-400">当前是标准版，未携带本地模型。可在线下载本地 AI 组件（约 {packBytes ? `${Math.round(packBytes / 1024 / 1024)}MB` : '426MB'}，只需下载一次，支持断点续传和 SHA-256 校验），下载完成后即可离线使用；也可以直接连接云端或已有 Ollama、LM Studio、vLLM、llama.cpp 服务。</div>
+                  {downloadActive ? (
+                    <div className="mt-3">
+                      <div className="h-2 overflow-hidden rounded-full bg-black/40"><div className="h-full bg-sky-500 transition-all" style={{ width: `${downloadProgress && downloadProgress.totalBytes ? Math.min(100, Math.round((downloadProgress.receivedBytes / downloadProgress.totalBytes) * 100)) : 0}%` }} /></div>
+                      <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-400">
+                        <span>{downloadProgress ? `${({ download: '下载中', verify: '校验中', extract: '解压中', done: '完成' } as Record<string, string>)[downloadProgress.stage] || downloadProgress.stage} ${downloadProgress.currentFile || ''} · ${(downloadProgress.receivedBytes / 1024 / 1024).toFixed(0)}/${(downloadProgress.totalBytes / 1024 / 1024).toFixed(0)}MB` : '正在连接…'}</span>
+                        <button onClick={() => void cancelLocalAiDownload()} className="shrink-0 text-red-300 hover:text-red-200">取消</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button disabled={busy} onClick={() => void startLocalAiDownload()} className="mt-3 rounded-lg bg-sky-600/80 px-4 py-2 text-sm text-white hover:bg-sky-600 disabled:opacity-40">下载本地 AI 组件</button>
+                  )}
+                  {downloadError && <div className="mt-2 text-xs text-red-300">{downloadError}</div>}
+                </div>}
                 {bundledStatus.lastNotice && <div className="mt-2 text-xs text-sky-300">{bundledStatus.lastNotice}</div>}
                 {bundledStatus.lastError && <div className="mt-2 text-xs text-red-300">{bundledStatus.lastError}</div>}
               </div>
