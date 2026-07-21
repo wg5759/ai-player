@@ -146,6 +146,8 @@ test('document previews are allowed by CSP while scripts stay self-only', () => 
   assert.match(index, /frame-src 'self' data: blob:/)
   assert.match(index, /script-src 'self'/)
   assert.match(index, /object-src 'none'/)
+  const playerView = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'PlayerView.tsx'), 'utf8')
+  assert.match(playerView, /\['\.docx', '\.doc'\]\.includes\(ext\)/)
 })
 
 test('library context menu routes documents to the unified chat with authorized tokens', () => {

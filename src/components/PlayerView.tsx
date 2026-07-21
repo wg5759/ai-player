@@ -423,7 +423,7 @@ export default function PlayerView({ onBack }: Props) {
   useEffect(() => {
     if (fileType === 'office' && videoSrc) {
       const ext = ('.' + (mediaName?.split('.').pop() || '')).toLowerCase()
-      if (ext === '.docx') {
+      if (['.docx', '.doc'].includes(ext)) {
         window.aiPlayer?.docx?.preview(videoSrc).then((r) => setOfficeHtml(r?.success ? r.html || null : null))
       } else if (['.xls', '.xlsx'].includes(ext)) {
         window.aiPlayer?.xlsx?.preview(videoSrc).then((r) => setOfficeHtml(r?.success ? r.html || null : null))
