@@ -1,0 +1,38 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const test = require('node:test')
+
+const policyPromise = import('../src/player-ui-policy.mjs')
+
+test('mouse wake threshold ignores sub-pixel/optical jitter but honours real movement', async () => {
+  const { isRealMouseActivity } = await policyPromise
+  assert.equal(isRealMouseActivity(null, { x: 10, y: 10 }), true)
+  assert.equal(isRealMouseActivity({ x: 100, y: 100 }, { x: 101, y: 100 }), false)
+  assert.equal(isRealMouseActivity({ x: 100, y: 100 }, { x: 102, y: 101 }), false)
+  assert.equal(isRealMouseActivity({ x: 100, y: 100 }, { x: 104, y: 100 }), true)
+  assert.equal(isRealMouseActivity({ x: 100, y: 100 }, { x: 100, y: 96 }), true)
+  assert.equal(isRealMouseActivity({ x: 100, y: 100 }, { x: 103, y: 103 }, 4), false) // 单轴均未超阈
+})
+
+test('auto hide policy unchanged: only while playing and unblocked', async () => {
+  const { PLAYER_CHROME_HIDE_DELAY_MS, PLAYER_MOUSE_WAKE_THRESHOLD_PX, shouldAutoHideControls } = await policyPromise
+  assert.equal(PLAYER_CHROME_HIDE_DELAY_MS, 3000)
+  assert.ok(PLAYER_MOUSE_WAKE_THRESHOLD_PX >= 3 && PLAYER_MOUSE_WAKE_THRESHOLD_PX <= 8)
+  assert.equal(shouldAutoHideControls({ hasMedia: true, playing: true }), true)
+  assert.equal(shouldAutoHideControls({ hasMedia: true, playing: false }), false)
+  assert.equal(shouldAutoHideControls({ hasMedia: true, playing: true, blocked: true }), false)
+  assert.equal(shouldAutoHideControls({ hasMedia: false, playing: true }), false)
+})
+
+test('player view routes mousemove through the jitter threshold and closes subtitle panel after tasks', () => {
+  const view = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'PlayerView.tsx'), 'utf8')
+  assert.match(view, /onMouseMove=\{handleMouseMove\}/)
+  assert.match(view, /isRealMouseActivity\(last, next\)/)
+  assert.doesNotMatch(view, /onMouseMove=\{handleUserActivity\}/)
+  // 双语生成/实时翻译成功后必须关闭字幕面板，否则 blocked 永远为真、控制栏永不隐藏
+  const bilingualBlock = view.slice(view.indexOf('const generateBilingual'), view.indexOf('const liveRequestIdRef'))
+  assert.match(bilingualBlock, /setSubtitlePanelOpen\(false\)/)
+  const liveBlock = view.slice(view.indexOf('const toggleLiveTranslate'), view.indexOf('useEffect(() => {\n    if (!liveSub) return'))
+  assert.match(liveBlock, /setSubtitlePanelOpen\(false\)/)
+})

@@ -1,6 +1,8 @@
 declare module '*.mjs' {
   export const PLAYER_CHROME_HIDE_DELAY_MS: number
+  export const PLAYER_MOUSE_WAKE_THRESHOLD_PX: number
   export function shouldAutoHideControls(input: { hasMedia?: boolean; playing: boolean; blocked?: boolean }): boolean
+  export function isRealMouseActivity(last: { x: number; y: number } | null, next: { x: number; y: number } | null, threshold?: number): boolean
 }
 
 // 桌面端 Electron 注入的全局 API 类型声明

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import PlayerControls from './PlayerControls'
 import { usePlayerStore } from '../stores/playerStore'
 import { useAgentStore } from '../stores/agentStore'
-import { PLAYER_CHROME_HIDE_DELAY_MS, shouldAutoHideControls } from '../player-ui-policy.mjs'
+import { PLAYER_CHROME_HIDE_DELAY_MS, isRealMouseActivity, shouldAutoHideControls } from '../player-ui-policy.mjs'
 
 interface Props {
   onBack: () => void
@@ -260,6 +260,18 @@ export default function PlayerView({ onBack }: Props) {
     }
   }, [agentOpen, holdControlsVisible, isMedia, isPlaying, setControlsVisible, subtitlePanelOpen])
 
+  // 光学/高轮询率鼠标静止时会持续发出 ±1~2px 的抖动事件，若每次都当用户活动，
+  // 控制栏会被反复唤醒（永不隐藏），原生菜单栏跟着显隐导致整个窗口“抖动”。
+  // 只有位移超过阈值才视为真实鼠标活动。
+  const lastMousePos = useRef<{ x: number; y: number } | null>(null)
+  const handleMouseMove = useCallback((event: React.MouseEvent) => {
+    const last = lastMousePos.current
+    const next = { x: event.clientX, y: event.clientY }
+    lastMousePos.current = next
+    if (!isRealMouseActivity(last, next)) return
+    handleUserActivity()
+  }, [handleUserActivity])
+
   useEffect(() => {
     handleUserActivity()
     return clearHideTimer
@@ -390,6 +402,7 @@ export default function PlayerView({ onBack }: Props) {
       }
       await applySubtitle(result.srtPath!, '.srt')
       setSubtitleStatus(`双语字幕已生成（${result.count} 句${result.failed ? `，${result.failed} 句未译` : ''}）：${result.srtPath}`)
+      setSubtitlePanelOpen(false)
     } catch (error) {
       setSubtitleStatus(error instanceof Error ? error.message : String(error))
     } finally {
@@ -449,6 +462,7 @@ export default function PlayerView({ onBack }: Props) {
     }
     setLiveSub({ requestId: result.requestId || requestId, cues: result.cues })
     setSubtitleStatus(`实时翻译已开启（${result.total} 句，从当前位置向前翻译）`)
+    setSubtitlePanelOpen(false)
   }
 
   useEffect(() => {
@@ -602,7 +616,7 @@ export default function PlayerView({ onBack }: Props) {
     <div
       ref={playerRootRef}
       className={`flex-1 min-h-0 relative overflow-hidden bg-black flex items-center justify-center ${isMedia && !controlsVisible ? 'cursor-none' : ''}`}
-      onMouseMove={handleUserActivity}
+      onMouseMove={handleMouseMove}
       onPointerDown={handleUserActivity}
       onKeyDownCapture={handleUserActivity}
       onDrop={handleDrop}
