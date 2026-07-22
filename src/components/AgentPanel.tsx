@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAgentStore } from '../stores/agentStore'
+import { usePlayerStore } from '../stores/playerStore'
 
 const EXAMPLE_TASKS = [
   { label: '整理成 Word', format: 'docx', text: '把所选资料整理成结构清晰的中文 Word 文档，保留事实和关键数据，增加标题和要点。' },
@@ -53,6 +54,12 @@ export default function AgentPanel() {
   attachmentsRef.current = attachments
   const docRequestIdRef = useRef('')
   const runDocTaskRef = useRef<(forceApprove?: boolean) => Promise<void>>(async () => {})
+  const runAnalysisTaskRef = useRef<(forceApprove?: boolean) => Promise<void>>(async () => {})
+  const routeTextSendRef = useRef<() => Promise<void>>(async () => {})
+  const pendingTaskRef = useRef<'doc' | 'analysis'>('doc')
+  const docInstructionRef = useRef('')
+  const analysisInstructionRef = useRef('')
+  const analysisFormatRef = useRef('docx')
   const [tmdbKey, setTmdbKey] = useState(() => localStorage.getItem('aiplayer_tmdb_key') || '')
   const [subtitleKey, setSubtitleKey] = useState(() => localStorage.getItem('aiplayer_subtitle_key') || '')
   const [showServiceEdit, setShowServiceEdit] = useState(false)
@@ -71,6 +78,13 @@ export default function AgentPanel() {
 
   useEffect(() => {
     const off = window.aiPlayer?.documents?.onStatus((event) => {
+      if (event.requestId === docRequestIdRef.current) setDocStatus(event.status)
+    })
+    return off
+  }, [])
+
+  useEffect(() => {
+    const off = window.aiPlayer?.analysis?.onStatus((event) => {
       if (event.requestId === docRequestIdRef.current) setDocStatus(event.status)
     })
     return off
@@ -106,11 +120,14 @@ export default function AgentPanel() {
 
   const runDocTask = async (forceApprove = false) => {
     const api = window.aiPlayer?.documents
-    const instruction = inputText.trim()
+    const instruction = forceApprove ? docInstructionRef.current : inputText.trim()
     if (!api || !instruction || docBusy) return
+    docInstructionRef.current = instruction
     const files = attachments
-    addMessage('user', `${instruction}\n（附件：${files.map((file) => file.name).join('、')}）`)
-    setInputText('')
+    if (!forceApprove) {
+      addMessage('user', `${instruction}\n（附件：${files.map((file) => file.name).join('、')}）`)
+      setInputText('')
+    }
     setDocBusy(true)
     setDocStatus('正在分析任务')
     setDocOutputs([])
@@ -124,6 +141,7 @@ export default function AgentPanel() {
         throw new Error('这个任务需要模型理解或生成内容，请先在模型接入中心配置模型。')
       }
       if (preview.requiresAi && caps && !caps.modelLocal && !(cloudApproved || forceApprove)) {
+        pendingTaskRef.current = 'doc'
         setNeedsApproval(true)
         return
       }
@@ -145,6 +163,68 @@ export default function AgentPanel() {
   }
   runDocTaskRef.current = runDocTask
 
+  const runAnalysisTask = async (forceApprove = false) => {
+    const api = window.aiPlayer?.analysis
+    const instruction = forceApprove ? analysisInstructionRef.current : inputText.trim()
+    if (!api || !instruction || docBusy) return
+    const { videoSrc, mediaName, duration } = usePlayerStore.getState()
+    if (!videoSrc || /^(https?|blob):/i.test(videoSrc)) {
+      addMessage('agent', '[错误] 当前没有可解剖的本地视频，请先打开一个视频文件。')
+      return
+    }
+    analysisInstructionRef.current = instruction
+    if (!forceApprove) {
+      addMessage('user', `${instruction}\n（当前视频：${mediaName || videoSrc}）`)
+      setInputText('')
+    }
+    setDocBusy(true)
+    setDocStatus('正在分析任务')
+    setDocOutputs([])
+    try {
+      const requestId = `analysis-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      docRequestIdRef.current = requestId
+      const result = await api.run({
+        sourcePath: videoSrc, mediaName, duration, instruction,
+        outputFormat: analysisFormatRef.current,
+        cloudApproved: cloudApproved || forceApprove,
+        requestId
+      })
+      if (result.requiresApproval) {
+        pendingTaskRef.current = 'analysis'
+        setNeedsApproval(true)
+        return
+      }
+      if (!result.success) throw new Error(result.error || '视频解剖失败')
+      addMessage('agent', result.summary || '解剖完成')
+      setDocOutputs(result.outputs || [])
+      setNeedsApproval(false)
+      setCloudApproved(false)
+    } catch (error) {
+      addMessage('agent', `[错误] ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setDocBusy(false)
+      setDocStatus('')
+    }
+  }
+  runAnalysisTaskRef.current = runAnalysisTask
+
+  const routeTextSend = async () => {
+    const text = inputText.trim()
+    const { videoSrc } = usePlayerStore.getState()
+    if (text && videoSrc && !/^(https?|blob):/i.test(videoSrc) && window.aiPlayer?.analysis) {
+      try {
+        const detection = await window.aiPlayer.analysis.detect(text)
+        if (detection?.matched) {
+          analysisFormatRef.current = detection.outputFormat
+          await runAnalysisTask()
+          return
+        }
+      } catch { /* 意图检测失败时按普通对话处理 */ }
+    }
+    void send()
+  }
+  routeTextSendRef.current = routeTextSend
+
   const cancelDocTask = async () => {
     if (docRequestIdRef.current) await window.aiPlayer?.documents?.cancel(docRequestIdRef.current)
     setDocStatus('正在取消')
@@ -155,7 +235,7 @@ export default function AgentPanel() {
       void runDocTask()
       return
     }
-    void send()
+    void routeTextSend()
   }
 
   useEffect(() => {
@@ -178,7 +258,7 @@ export default function AgentPanel() {
       if (text) {
         useAgentStore.getState().setInputText(text)
         if (attachmentsRef.current.length > 0) void runDocTaskRef.current()
-        else void useAgentStore.getState().send()
+        else void routeTextSendRef.current()
       }
     }
     recognition.onerror = () => setListening(false)
@@ -277,9 +357,9 @@ export default function AgentPanel() {
           <div className="flex items-center gap-2 border-b border-amber-400/20 bg-amber-400/[0.06] px-4 py-2 text-xs text-amber-100">
             <label className="flex flex-1 cursor-pointer items-center gap-2">
               <input type="checkbox" checked={cloudApproved} onChange={(event) => setCloudApproved(event.target.checked)} />
-              允许把本次所选文件内容发送给当前云端模型
+              允许把本次任务的内容（文件正文或字幕）发送给当前云端模型
             </label>
-            <button disabled={!cloudApproved || docBusy} onClick={() => { setNeedsApproval(false); void runDocTask(true) }} className="rounded bg-amber-600 px-3 py-1 text-white disabled:opacity-40">继续执行</button>
+            <button disabled={!cloudApproved || docBusy} onClick={() => { setNeedsApproval(false); if (pendingTaskRef.current === 'analysis') void runAnalysisTaskRef.current(true); else void runDocTaskRef.current(true) }} className="rounded bg-amber-600 px-3 py-1 text-white disabled:opacity-40">继续执行</button>
           </div>
         )}
 

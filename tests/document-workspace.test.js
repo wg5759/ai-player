@@ -135,7 +135,7 @@ test('desktop menu, preload bridge and unified chat expose the document pipeline
   assert.match(preload, /ipcRenderer\.invoke\('documents:run'/)
   assert.doesNotMatch(app, /<DocumentWorkspace/)
   assert.match(panel, /api\.run\(\{ tokens, instruction, outputFormat/)
-  assert.match(panel, /允许把本次所选文件内容发送给当前云端模型/)
+  assert.match(panel, /允许把本次任务的内容（文件正文或字幕）发送给当前云端模型/)
 })
 
 test('PDF text extraction reads embedded text and rejects image-only PDFs honestly', async () => {

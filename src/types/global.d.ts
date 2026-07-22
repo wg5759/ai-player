@@ -68,6 +68,30 @@ interface AiPlayerAPI {
     onStatus: (cb: (event: { requestId: string; status: string }) => void) => () => void
     onOpenExternal: (cb: (files: Array<{ token: string; name: string; ext: string; size: number }>) => void) => () => void
   }
+  analysis?: {
+    detect: (text: string) => Promise<{ matched: boolean; outputFormat: string }>
+    run: (input: {
+      sourcePath: string
+      mediaName: string | null
+      duration: number
+      instruction: string
+      outputFormat: string
+      cloudApproved: boolean
+      requestId: string
+    }) => Promise<{
+      success: boolean
+      requestId: string
+      requiresApproval?: boolean
+      outputs?: string[]
+      summary?: string
+      historyId?: string
+      usedAi?: boolean
+      cueCount?: number
+      error?: string
+    }>
+    cancel: (requestId: string) => Promise<boolean>
+    onStatus: (cb: (event: { requestId: string; status: string }) => void) => () => void
+  }
   localAI?: {
     status: () => Promise<LocalAiComponentStatus>
     download: () => Promise<{ success: boolean; error?: string; status?: BundledModelStatus }>

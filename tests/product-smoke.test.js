@@ -131,7 +131,7 @@ test('unified conversation opens any file and runs document tasks inline', () =>
   assert.match(panel, /chat\?\.openAny/)
   assert.match(panel, /attachments\.length > 0/)
   assert.match(panel, /api\.run\(\{ tokens, instruction, outputFormat, cloudApproved/)
-  assert.match(panel, /允许把本次所选文件内容发送给当前云端模型/)
+  assert.match(panel, /允许把本次任务的内容（文件正文或字幕）发送给当前云端模型/)
   assert.match(panel, /ai-player-play-file/)
   assert.match(panel, /system\?\.openPath\(output\)/)
   assert.match(app, /ai-player-play-file/)

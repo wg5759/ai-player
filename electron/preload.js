@@ -62,6 +62,16 @@ contextBridge.exposeInMainWorld('aiPlayer', {
       return () => ipcRenderer.removeListener('documents:status', handler)
     }
   },
+  analysis: {
+    detect: (text) => ipcRenderer.invoke('analysis:detect', text),
+    run: (input) => ipcRenderer.invoke('analysis:run', input),
+    cancel: (requestId) => ipcRenderer.invoke('analysis:cancel', requestId),
+    onStatus: (cb) => {
+      const handler = (_event, payload) => cb(payload)
+      ipcRenderer.on('analysis:status', handler)
+      return () => ipcRenderer.removeListener('analysis:status', handler)
+    }
+  },
   localAI: {
     status: () => ipcRenderer.invoke('localai:status'),
     download: () => ipcRenderer.invoke('localai:download'),

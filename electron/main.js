@@ -32,6 +32,7 @@ const { ScreenCaptureService } = require('./screen-capture-service')
 const { BundledLocalRuntime } = require('./bundled-local-runtime')
 const { extractExternalMediaPaths, hasDocumentVerbFlag, extractDocumentVerbPaths } = require('./external-media-open')
 const { buildOfflineAnalysis, loadAnalysisContext, renderRecut } = require('./analysis-studio-service')
+const { detectAnalysisIntent, resolveAnalysisOutput, runChatAnalysis } = require('./analysis-chat-service')
 const {
   generateImageAsset,
   renderCreativeVideo,
@@ -79,6 +80,7 @@ let documentFlushTimer = null
 const activeAiRequests = new Map()
 const activeComputerUseRequests = new Map()
 const activeDocumentRequests = new Map()
+const activeAnalysisRequests = new Map()
 const approvedDocumentSelections = new Map()
 const authorizedFolders = new Set()
 const userAuthorizedPaths = new Set()
@@ -1024,6 +1026,52 @@ app.whenReady().then(async () => {
   ipcMain.handle('studio:offline-analysis', (event, input = {}) => {
     assertTrustedSender(event)
     return buildOfflineAnalysis(input)
+  })
+  // 对话流视频解剖：AI 助手面板直接对当前视频发起，报告经文档工作台另存，原文件不动
+  ipcMain.handle('analysis:detect', (event, text) => {
+    assertTrustedSender(event)
+    return { matched: detectAnalysisIntent(text), outputFormat: resolveAnalysisOutput(text) }
+  })
+  ipcMain.handle('analysis:run', async (event, input = {}) => {
+    assertTrustedSender(event)
+    const requestId = normalizeRequestId(input.requestId, 'analysis')
+    activeAnalysisRequests.get(requestId)?.abort()
+    const controller = new AbortController()
+    activeAnalysisRequests.set(requestId, controller)
+    const sendStatus = (status) => {
+      if (!event.sender.isDestroyed()) event.sender.send('analysis:status', { requestId, status })
+    }
+    try {
+      const config = modelConfigStore.resolved('chat')
+      const requiresKey = config.requiresKey !== false
+      const result = await runChatAnalysis({
+        sourcePath: input.sourcePath,
+        mediaName: input.mediaName,
+        duration: input.duration,
+        instruction: input.instruction,
+        outputFormat: input.outputFormat,
+        cloudApproved: input.cloudApproved === true,
+        signal: controller.signal,
+        onStatus: sendStatus,
+        workspace: documentWorkspace,
+        complete: llmComplete,
+        model: {
+          configured: Boolean(config.baseUrl && config.model && (!requiresKey || config.apiKey)),
+          local: isLocalModelConfig(config),
+          provider: config.providerName || config.providerId || '',
+          model: config.model || ''
+        }
+      })
+      return { ...result, requestId }
+    } finally {
+      activeAnalysisRequests.delete(requestId)
+    }
+  })
+  ipcMain.handle('analysis:cancel', (event, requestId) => {
+    assertTrustedSender(event)
+    const controller = activeAnalysisRequests.get(String(requestId || ''))
+    controller?.abort()
+    return Boolean(controller)
   })
   ipcMain.handle('studio:export-project', async (event, project = {}) => {
     assertTrustedSender(event)
