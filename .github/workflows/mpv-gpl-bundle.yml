@@ -83,7 +83,7 @@ jobs:
           ./ci/install-cmake.ps1 -arch x64
 
       - name: Restore compiler cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .ccache
           key: mpv-windows-x64-${{ env.MPV_COMMIT }}-ccache-v1
